@@ -1,0 +1,16 @@
+{
+  "name": "cigarette-card-search",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch:cards": "node --env-file=.env --import tsx scripts/fetch-cards.ts",
+    "inspect:cards": "node --import tsx scripts/inspect-cards.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
