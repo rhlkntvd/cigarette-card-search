@@ -6,6 +6,7 @@
   "scripts": {
     "fetch:cards": "node --env-file=.env --import tsx scripts/fetch-cards.ts",
     "inspect:cards": "node --import tsx scripts/inspect-cards.ts",
+    "normalize:cards": "node --import tsx scripts/normalize-cards.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
