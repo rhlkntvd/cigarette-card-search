@@ -1,5 +1,10 @@
 node_modules/
+.venv/
 .env
 
 data/raw/
 data/processed/
+data/embeddings/
+
+__pycache__/
+*.py[cod]
