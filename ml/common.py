@@ -3,8 +3,10 @@ from io import BytesIO
 import requests
 import torch
 from PIL import Image
+from requests.adapters import HTTPAdapter
 from transformers import AutoModel, AutoProcessor
 from transformers.utils import logging as hf_logging
+from urllib3.util.retry import Retry
 
 DEBUG = False
 
@@ -19,38 +21,150 @@ else:
     hf_logging.disable_progress_bar()
 
 
-def get_iiif_url(image_id: str, size: int = 512) -> str:
+def get_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+
+    return torch.device("cpu")
+
+
+def create_http_session() -> requests.Session:
+    retry_policy = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        status=3,
+        backoff_factor=0.5,
+        status_forcelist=[
+            429,
+            500,
+            502,
+            503,
+            504,
+        ],
+        allowed_methods=["GET"],
+    )
+
+    adapter = HTTPAdapter(
+        max_retries=retry_policy,
+    )
+
+    session = requests.Session()
+
+    session.mount(
+        "https://",
+        adapter,
+    )
+
+    session.mount(
+        "http://",
+        adapter,
+    )
+
+    return session
+
+
+def get_iiif_url(
+    image_id: str,
+    size: int = 512,
+) -> str:
     return (
         "https://iiif.nypl.org/iiif/3/" f"{image_id}/full/^!{size},{size}/0/default.jpg"
     )
 
 
-def fetch_image(image_id: str, size: int = 512) -> Image.Image:
-    url = get_iiif_url(image_id, size)
+def fetch_image(
+    image_id: str,
+    size: int = 512,
+    session: requests.Session | None = None,
+) -> Image.Image:
+    url = get_iiif_url(
+        image_id,
+        size,
+    )
 
-    response = requests.get(url, timeout=30)
+    client = session or requests
+
+    response = client.get(
+        url,
+        timeout=30,
+    )
+
     response.raise_for_status()
 
     return Image.open(BytesIO(response.content)).convert("RGB")
 
 
-def load_model():
-    processor = AutoProcessor.from_pretrained(MODEL_NAME)
-    model = AutoModel.from_pretrained(MODEL_NAME)
+def load_model(
+    device: torch.device | None = None,
+):
+    processor = AutoProcessor.from_pretrained(
+        MODEL_NAME,
+    )
+
+    model = AutoModel.from_pretrained(
+        MODEL_NAME,
+    )
 
     model.eval()
+
+    if device is not None:
+        model.to(device)
 
     return processor, model
 
 
-def get_embedding_tensor(output) -> torch.Tensor:
+def get_embedding_tensor(
+    output,
+) -> torch.Tensor:
     if isinstance(output, torch.Tensor):
         return output
 
     if hasattr(output, "pooler_output"):
         return output.pooler_output
 
-    raise TypeError(f"unexpected model output type: {type(output)}")
+    raise TypeError(f"Unexpected model output type: {type(output)}")
+
+
+def get_model_device(
+    model,
+) -> torch.device:
+    return next(model.parameters()).device
+
+
+def embed_images(
+    images: list[Image.Image],
+    processor,
+    model,
+) -> torch.Tensor:
+    inputs = processor(
+        images=images,
+        return_tensors="pt",
+    )
+
+    device = get_model_device(model)
+
+    inputs = {key: value.to(device) for key, value in inputs.items()}
+
+    with torch.inference_mode():
+        output = model.get_image_features(
+            **inputs,
+        )
+
+    embeddings = get_embedding_tensor(
+        output,
+    )
+
+    embeddings = torch.nn.functional.normalize(
+        embeddings,
+        p=2,
+        dim=-1,
+    )
+
+    return embeddings.cpu()
 
 
 def embed_image(
@@ -58,20 +172,10 @@ def embed_image(
     processor,
     model,
 ) -> torch.Tensor:
-    inputs = processor(
-        images=image,
-        return_tensors="pt",
-    )
-
-    with torch.inference_mode():
-        output = model.get_image_features(**inputs)
-
-    embedding = get_embedding_tensor(output)
-
-    return torch.nn.functional.normalize(
-        embedding,
-        p=2,
-        dim=-1,
+    return embed_images(
+        [image],
+        processor,
+        model,
     )
 
 
@@ -87,13 +191,23 @@ def embed_texts(
         return_tensors="pt",
     )
 
+    device = get_model_device(model)
+
+    inputs = {key: value.to(device) for key, value in inputs.items()}
+
     with torch.inference_mode():
-        output = model.get_text_features(**inputs)
+        output = model.get_text_features(
+            **inputs,
+        )
 
-    embeddings = get_embedding_tensor(output)
+    embeddings = get_embedding_tensor(
+        output,
+    )
 
-    return torch.nn.functional.normalize(
+    embeddings = torch.nn.functional.normalize(
         embeddings,
         p=2,
         dim=-1,
     )
+
+    return embeddings.cpu()
