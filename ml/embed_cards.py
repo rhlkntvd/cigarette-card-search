@@ -1,10 +1,14 @@
 import argparse
 import json
 import re
+import threading
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 from pathlib import Path
 from time import perf_counter
 
-import requests
 import torch
 
 from common import (
@@ -32,8 +36,11 @@ FAILURES_PATH = OUTPUT_DIR / "failures.jsonl"
 
 CHECKPOINT_SIZE = 256
 DEFAULT_BATCH_SIZE = 16
+DEFAULT_DOWNLOAD_WORKERS = 4
 
 SHARD_PATTERN = re.compile(r"^shard-(\d+)-(\d+)\.pt$")
+
+THREAD_LOCAL = threading.local()
 
 
 def parse_args():
@@ -53,6 +60,13 @@ def parse_args():
         type=int,
         default=DEFAULT_BATCH_SIZE,
         help=("Number of images passed through " "SigLIP2 at once."),
+    )
+
+    parser.add_argument(
+        "--download-workers",
+        type=int,
+        default=DEFAULT_DOWNLOAD_WORKERS,
+        help=("Number of concurrent workers used " "to download IIIF images."),
     )
 
     return parser.parse_args()
@@ -202,14 +216,99 @@ def save_shard(
     )
 
 
+def get_thread_session():
+    session = getattr(
+        THREAD_LOCAL,
+        "session",
+        None,
+    )
+
+    if session is None:
+        session = create_http_session()
+        THREAD_LOCAL.session = session
+
+    return session
+
+
+def fetch_card_image(
+    index: int,
+    card: dict,
+):
+    session = get_thread_session()
+
+    image = fetch_image(
+        card["frontImageId"],
+        session=session,
+    )
+
+    return index, card, image
+
+
+def fetch_batch_images(
+    batch_cards: list[dict],
+    batch_start: int,
+    download_workers: int,
+):
+    successes = []
+    failures = []
+
+    max_workers = min(
+        download_workers,
+        len(batch_cards),
+    )
+
+    with ThreadPoolExecutor(
+        max_workers=max_workers,
+    ) as executor:
+        future_to_item = {
+            executor.submit(
+                fetch_card_image,
+                index,
+                card,
+            ): (index, card)
+            for index, card in enumerate(
+                batch_cards,
+                start=batch_start,
+            )
+        }
+
+        for future in as_completed(future_to_item):
+            index, card = future_to_item[future]
+
+            try:
+                result = future.result()
+                successes.append(result)
+
+            except Exception as error:
+                failures.append(
+                    {
+                        "index": index,
+                        "dplaId": card["dplaId"],
+                        "title": card["title"],
+                        "error": str(error),
+                    }
+                )
+
+    successes.sort(key=lambda item: item[0])
+
+    images = []
+    valid_cards = []
+
+    for index, card, image in successes:
+        images.append(image)
+        valid_cards.append((index, card))
+
+    return images, valid_cards, failures
+
+
 def embed_range(
     cards: list[dict],
     start: int,
     end: int,
     batch_size: int,
+    download_workers: int,
     processor,
     model,
-    session: requests.Session,
 ):
     embeddings = []
     embedded_cards = []
@@ -230,38 +329,23 @@ def embed_range(
 
         batch_cards = cards[batch_start:batch_end]
 
-        images = []
-        valid_cards = []
-
         download_started = perf_counter()
 
-        for index, card in enumerate(
+        (
+            images,
+            valid_cards,
+            batch_failures,
+        ) = fetch_batch_images(
             batch_cards,
-            start=batch_start,
-        ):
-            try:
-                image = fetch_image(
-                    card["frontImageId"],
-                    session=session,
-                )
-
-                images.append(image)
-
-                valid_cards.append((index, card))
-
-            except Exception as error:
-                failures.append(
-                    {
-                        "index": index,
-                        "dplaId": card["dplaId"],
-                        "title": card["title"],
-                        "error": str(error),
-                    }
-                )
+            batch_start,
+            download_workers,
+        )
 
         download_seconds = perf_counter() - download_started
 
         total_download_seconds += download_seconds
+
+        failures.extend(batch_failures)
 
         inference_seconds = 0.0
 
@@ -487,6 +571,9 @@ def main():
     if args.batch_size < 1:
         raise ValueError("batch size must be at least 1")
 
+    if args.download_workers < 1:
+        raise ValueError("download workers must be at least 1")
+
     cards = load_cards(
         CARDS_PATH,
         args.limit,
@@ -518,63 +605,57 @@ def main():
         device=device,
     )
 
-    session = create_http_session()
+    start = resume_index
 
-    try:
-        start = resume_index
+    while start < len(cards):
+        end = min(
+            start + CHECKPOINT_SIZE - 1,
+            len(cards) - 1,
+        )
 
-        while start < len(cards):
-            end = min(
-                start + CHECKPOINT_SIZE - 1,
-                len(cards) - 1,
-            )
+        print()
+        print(f"Embedding cards " f"{start}–{end}")
 
-            print()
-            print(f"Embedding cards " f"{start}–{end}")
+        (
+            embeddings,
+            embedded_cards,
+            failures,
+            download_seconds,
+            inference_seconds,
+        ) = embed_range(
+            cards,
+            start,
+            end,
+            args.batch_size,
+            args.download_workers,
+            processor,
+            model,
+        )
 
-            (
-                embeddings,
-                embedded_cards,
-                failures,
-                download_seconds,
-                inference_seconds,
-            ) = embed_range(
-                cards,
-                start,
-                end,
-                args.batch_size,
-                processor,
-                model,
-                session,
-            )
+        save_shard(
+            start,
+            end,
+            embeddings,
+            embedded_cards,
+            failures,
+        )
 
-            save_shard(
-                start,
-                end,
-                embeddings,
-                embedded_cards,
-                failures,
-            )
+        print(
+            f"Saved checkpoint "
+            f"{start}–{end}: "
+            f"{len(embedded_cards)} succeeded, "
+            f"{len(failures)} failed"
+        )
 
-            print(
-                f"Saved checkpoint "
-                f"{start}–{end}: "
-                f"{len(embedded_cards)} succeeded, "
-                f"{len(failures)} failed"
-            )
+        print(
+            f"Checkpoint timing: "
+            f"download "
+            f"{download_seconds:.2f}s, "
+            f"inference "
+            f"{inference_seconds:.2f}s"
+        )
 
-            print(
-                f"Checkpoint timing: "
-                f"download "
-                f"{download_seconds:.2f}s, "
-                f"inference "
-                f"{inference_seconds:.2f}s"
-            )
-
-            start = end + 1
-
-    finally:
-        session.close()
+        start = end + 1
 
     embedding_matrix = finalize_outputs()
 
