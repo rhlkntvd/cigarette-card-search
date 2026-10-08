@@ -1,0 +1,23 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.6-pg17
+
+    environment:
+      POSTGRES_DB: cigarette_cards
+      POSTGRES_USER: cards
+      POSTGRES_PASSWORD: localdev
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cards -d cigarette_cards"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
