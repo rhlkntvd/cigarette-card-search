@@ -1,8 +1,7 @@
 import pgvector from "pgvector";
-
 import { sql } from "./db.js";
+import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector.js";
 
-const EMBEDDING_DIMENSIONS = 768;
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 100;
 
@@ -26,11 +25,9 @@ export async function searchCards(
   embedding: number[],
   options: SearchOptions = {},
 ): Promise<SearchResult[]> {
-  if (embedding.length !== EMBEDDING_DIMENSIONS) {
+  if (!isEmbedding(embedding)) {
     throw new Error(
-      "Expected a " +
-        `${EMBEDDING_DIMENSIONS}-dimensional ` +
-        `embedding, got ${embedding.length}`,
+      `Expected a nonzero ${EMBEDDING_DIMENSIONS}-dimensional embedding containing only finite numbers`,
     );
   }
 

@@ -1,4 +1,4 @@
-const EXPECTED_DIMENSIONS = 768;
+import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector.js";
 
 interface EmbedResponse {
   embedding: number[];
@@ -22,20 +22,9 @@ function isEmbedResponse(value: unknown): value is EmbedResponse {
 
   const candidate = value as Record<string, unknown>;
 
-  if (candidate.dimensions !== EXPECTED_DIMENSIONS) {
-    return false;
-  }
-
-  if (!Array.isArray(candidate.embedding)) {
-    return false;
-  }
-
-  if (candidate.embedding.length !== EXPECTED_DIMENSIONS) {
-    return false;
-  }
-
-  return candidate.embedding.every(
-    (item) => typeof item === "number" && Number.isFinite(item),
+  return (
+    candidate.dimensions === EMBEDDING_DIMENSIONS &&
+    isEmbedding(candidate.embedding)
   );
 }
 
