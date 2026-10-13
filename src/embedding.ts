@@ -1,5 +1,7 @@
 import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector.js";
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 interface EmbedResponse {
   embedding: number[];
   dimensions: number;
@@ -35,30 +37,53 @@ export async function embedText(text: string): Promise<number[]> {
     throw new Error("Search text must not be empty");
   }
 
-  const response = await fetch(`${getEmbeddingServiceUrl()}/embed`, {
-    method: "POST",
+  const url = `${getEmbeddingServiceUrl()}/embed`;
+  const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
-    headers: {
-      "Content-Type": "application/json",
-    },
+  let response: Response;
+  let responseText: string;
 
-    body: JSON.stringify({
-      text: normalizedText,
-    }),
-  });
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text: normalizedText }),
+      signal,
+    });
+
+    // keep the deadline active until the response body has been read
+    responseText = await response.text();
+  } catch (error: unknown) {
+    if (signal.aborted) {
+      throw new Error(
+        `Embedding service request timed out after ${REQUEST_TIMEOUT_MS} ms`,
+        { cause: error },
+      );
+    }
+
+    throw new Error("Embedding service request failed", { cause: error });
+  }
 
   if (!response.ok) {
-    const message = await response.text();
-
     throw new Error(
-      "Embedding service returned " + `${response.status}: ${message}`,
+      `Embedding service returned ${response.status}: ${responseText}`,
     );
   }
 
-  const body: unknown = await response.json();
+  let body: unknown;
+
+  try {
+    body = JSON.parse(responseText);
+  } catch (error: unknown) {
+    throw new Error("Embedding service returned invalid JSON", {
+      cause: error,
+    });
+  }
 
   if (!isEmbedResponse(body)) {
-    throw new Error("Embedding service returned " + "an invalid response");
+    throw new Error("Embedding service returned an invalid response");
   }
 
   return body.embedding;
