@@ -4,7 +4,7 @@ import { stdin as input, stdout as output } from "node:process";
 
 import { createInterface } from "node:readline/promises";
 
-import { sql } from "../src/db.js";
+import { closeDatabase } from "../src/db.js";
 
 import { embedText } from "../src/embedding.js";
 
@@ -94,7 +94,7 @@ async function main() {
   } finally {
     readline.close();
 
-    await sql.end();
+    await closeDatabase();
   }
 }
 

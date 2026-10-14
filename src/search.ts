@@ -1,5 +1,5 @@
 import pgvector from "pgvector";
-import { sql } from "./db.js";
+import { getSql } from "./db.js";
 import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector.js";
 
 const DEFAULT_LIMIT = 5;
@@ -40,6 +40,7 @@ export async function searchCards(
   }
 
   const queryVector = pgvector.toSql(embedding);
+  const sql = getSql();
 
   const rows = await sql<SearchResult[]>`
     WITH query AS (

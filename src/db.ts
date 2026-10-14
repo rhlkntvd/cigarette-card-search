@@ -1,9 +1,24 @@
 import postgres from "postgres";
 
-const databaseUrl = process.env.DATABASE_URL;
+let sql: postgres.Sql | undefined;
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is not set");
+export function getSql(): postgres.Sql {
+  if (sql) {
+    return sql;
+  }
+
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is not set");
+  }
+
+  sql = postgres(databaseUrl);
+  return sql;
 }
 
-export const sql = postgres(databaseUrl);
+export async function closeDatabase(): Promise<void> {
+  const client = sql;
+  sql = undefined;
+  await client?.end();
+}
