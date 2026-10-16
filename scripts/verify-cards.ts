@@ -366,6 +366,10 @@ async function main() {
     errors.push("Processed dataset contains " + "duplicate NYPL UUIDs");
   }
 
+  if (missingTitleCount > 0) {
+    errors.push("Processed dataset contains missing titles");
+  }
+
   if (missingFrontImageIdCount > 0) {
     errors.push("Processed dataset contains " + "missing front image IDs");
   }
