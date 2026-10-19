@@ -10,7 +10,7 @@ const verifierPath = fileURLToPath(
   new URL("../scripts/verify-cards.ts", import.meta.url),
 );
 
-async function verifyTitle(title: unknown) {
+async function verifyCard(overrides: Record<string, unknown> = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "verify-cards-"));
 
   try {
@@ -27,12 +27,13 @@ async function verifyTitle(title: unknown) {
 
     const card = {
       dplaId: "dpla-id",
-      title,
+      title: "A blue butterfly",
       nyplUuid: "nypl-uuid",
       frontImageId: "front-id",
       sourceUrl: "https://digitalcollections.nypl.org/items/nypl-uuid",
       rights: null,
       displayEligible: false,
+      ...overrides,
     };
 
     await writeFile(
@@ -58,7 +59,7 @@ async function verifyTitle(title: unknown) {
 }
 
 test("rejects a missing title with a failing exit status", async () => {
-  const result = await verifyTitle(undefined);
+  const result = await verifyCard({ title: undefined });
 
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /Missing titles: 1/);
@@ -78,7 +79,7 @@ test("rejects blank and non-string titles", async (t) => {
 
   for (const { name, title } of cases) {
     await t.test(name, async () => {
-      const result = await verifyTitle(title);
+      const result = await verifyCard({ title });
 
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.match(result.stdout, /Missing titles: 1/);
@@ -89,10 +90,96 @@ test("rejects blank and non-string titles", async (t) => {
 
 test("accepts nonblank titles including the normalizer's Untitled fallback", async () => {
   for (const title of ["A blue butterfly", "Untitled", "  Butterfly  "]) {
-    const result = await verifyTitle(title);
+    const result = await verifyCard({ title });
 
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stdout, /Missing titles: 0/);
     assert.match(result.stdout, /Dataset verification passed/);
+  }
+});
+
+test("rejects missing or malformed rights instead of treating them as null", async () => {
+  for (const rights of [undefined, "", " \t ", 42, false, [], {}]) {
+    const result = await verifyCard({ rights });
+
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /Invalid rights values: 1/);
+    assert.match(
+      result.stderr,
+      /Processed dataset contains invalid rights values/,
+    );
+  }
+});
+
+test("rejects malformed back image IDs when the field is present", async () => {
+  for (const backImageId of [null, "", " \t ", 42, false, [], {}]) {
+    const result = await verifyCard({ backImageId });
+
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /Missing back images: 0/);
+    assert.match(result.stdout, /Invalid back image IDs: 1/);
+    assert.match(
+      result.stderr,
+      /Processed dataset contains invalid back image IDs/,
+    );
+  }
+});
+
+test("explicitly rejects missing or non-boolean display eligibility", async () => {
+  for (const displayEligible of [undefined, null, "false", 0, [], {}]) {
+    const result = await verifyCard({ displayEligible });
+
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /Invalid display eligibility values: 1/);
+    assert.match(result.stdout, /Eligibility mismatches: 0/);
+    assert.match(result.stderr, /non-boolean display eligibility values/);
+  }
+});
+
+test("accepts nullable rights, absent back images and valid field values", async () => {
+  const cases = [
+    {},
+    {
+      rights: "http://rightsstatements.org/vocab/NoC-US/1.0/",
+      displayEligible: true,
+      backImageId: "back-id",
+    },
+    {
+      rights: "https://example.test/unknown-rights/",
+      displayEligible: false,
+      backImageId: "back-id",
+    },
+  ];
+
+  for (const overrides of cases) {
+    const result = await verifyCard(overrides);
+
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Invalid back image IDs: 0/);
+    assert.match(result.stdout, /Invalid rights values: 0/);
+    assert.match(result.stdout, /Invalid display eligibility values: 0/);
+    assert.match(result.stdout, /Dataset verification passed/);
+  }
+});
+
+test("still rejects boolean eligibility that disagrees with the rights policy", async () => {
+  const cases = [
+    {
+      rights: "http://rightsstatements.org/vocab/NoC-US/1.0/",
+      displayEligible: false,
+    },
+    {
+      rights: "http://rightsstatements.org/vocab/UND/1.0/",
+      displayEligible: true,
+    },
+  ];
+
+  for (const overrides of cases) {
+    const result = await verifyCard(overrides);
+
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /Invalid display eligibility values: 0/);
+    assert.match(result.stdout, /Eligibility mismatches: 1/);
+    assert.match(result.stderr, /does not match the current rights policy/);
   }
 });

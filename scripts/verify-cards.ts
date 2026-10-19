@@ -151,6 +151,7 @@ async function main() {
   let missingTitleCount = 0;
   let missingFrontImageIdCount = 0;
   let missingBackImageCount = 0;
+  let invalidBackImageIdCount = 0;
   let missingSourceUrlCount = 0;
 
   let duplicateProcessedDplaIdCount = 0;
@@ -158,6 +159,8 @@ async function main() {
   let duplicateFrontImageIdCount = 0;
 
   let displayEligibleCount = 0;
+  let invalidRightsCount = 0;
+  let invalidDisplayEligibilityCount = 0;
   let eligibilityMismatchCount = 0;
 
   let processedIdMissingFromRawCount = 0;
@@ -221,8 +224,10 @@ async function main() {
       frontImageIds.add(card.frontImageId);
     }
 
-    if (!isNonEmptyString(card.backImageId)) {
+    if (card.backImageId === undefined) {
       missingBackImageCount += 1;
+    } else if (!isNonEmptyString(card.backImageId)) {
+      invalidBackImageIdCount += 1;
     }
 
     if (!isNonEmptyString(card.sourceUrl)) {
@@ -232,6 +237,10 @@ async function main() {
     /*
      * Rights checks
      */
+
+    if (card.rights !== null && !isNonEmptyString(card.rights)) {
+      invalidRightsCount += 1;
+    }
 
     const rights = isNonEmptyString(card.rights) ? card.rights : null;
 
@@ -245,7 +254,9 @@ async function main() {
       displayEligibleCount += 1;
     }
 
-    if (card.displayEligible !== expectedEligibility) {
+    if (typeof card.displayEligible !== "boolean") {
+      invalidDisplayEligibilityCount += 1;
+    } else if (card.displayEligible !== expectedEligibility) {
       eligibilityMismatchCount += 1;
     }
   });
@@ -292,6 +303,8 @@ async function main() {
 
   console.log(`Missing back images: ${missingBackImageCount}`);
 
+  console.log(`Invalid back image IDs: ${invalidBackImageIdCount}`);
+
   console.log(`Missing source URLs: ${missingSourceUrlCount}`);
 
   console.log(`Duplicate DPLA IDs: ${duplicateProcessedDplaIdCount}`);
@@ -309,6 +322,12 @@ async function main() {
   console.log("----------------------");
 
   console.log(`Display eligible: ${displayEligibleCount}`);
+
+  console.log(`Invalid rights values: ${invalidRightsCount}`);
+
+  console.log(
+    `Invalid display eligibility values: ${invalidDisplayEligibilityCount}`,
+  );
 
   console.log(`Eligibility mismatches: ${eligibilityMismatchCount}`);
 
@@ -376,6 +395,26 @@ async function main() {
 
   if (missingSourceUrlCount > 0) {
     errors.push("Processed dataset contains " + "missing source URLs");
+  }
+
+  if (invalidBackImageIdCount > 0) {
+    errors.push(
+      "Processed dataset contains invalid back image IDs " +
+        "(expected a nonempty string when present)",
+    );
+  }
+
+  if (invalidRightsCount > 0) {
+    errors.push(
+      "Processed dataset contains invalid rights values " +
+        "(expected a nonempty string or null)",
+    );
+  }
+
+  if (invalidDisplayEligibilityCount > 0) {
+    errors.push(
+      "Processed dataset contains non-boolean display eligibility values",
+    );
   }
 
   if (processedIdMissingFromRawCount > 0) {
