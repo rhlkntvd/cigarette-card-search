@@ -1,3 +1,9 @@
+"""Serve SigLIP2 text embeddings over HTTP.
+
+Run from the repository root:
+    python -m uvicorn ml.embedding_service:app --host 127.0.0.1 --port 8000
+"""
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request

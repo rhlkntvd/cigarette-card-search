@@ -1,18 +1,28 @@
+"""Search pgvector with SigLIP2 directly.
+
+Run from the repository root:
+    python -m ml.search_pgvector --public-only
+"""
+
 import argparse
 import os
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 import psycopg
+from dotenv import load_dotenv
 from pgvector import Vector
 from pgvector.psycopg import register_vector
 
-from common import (
+from ml.common import (
     embed_texts,
     get_device,
     get_iiif_url,
     load_model,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_LIMIT = 5
 
@@ -101,6 +111,7 @@ def main() -> None:
     if args.limit < 1:
         raise RuntimeError("--limit must be at least 1")
 
+    load_dotenv(ROOT / ".env", override=False)
     database_url = get_database_url()
 
     device = get_device()

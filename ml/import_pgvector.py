@@ -1,3 +1,9 @@
+"""Import card metadata and embeddings into an empty PostgreSQL cards table.
+
+Run from the repository root:
+    python -m ml.import_pgvector
+"""
+
 import json
 import os
 from pathlib import Path
@@ -5,6 +11,7 @@ from typing import Any
 
 import psycopg
 import torch
+from dotenv import load_dotenv
 from pgvector import Vector
 from pgvector.psycopg import register_vector
 
@@ -175,6 +182,7 @@ def make_row(
 
 
 def main() -> None:
+    load_dotenv(ROOT / ".env", override=False)
     database_url = get_database_url()
 
     print("Loading embedding metadata...")

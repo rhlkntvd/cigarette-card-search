@@ -1,4 +1,10 @@
-from common import (
+"""Check similarity between one image and example queries.
+
+Run from the repository root:
+    python -m ml.test_one_image
+"""
+
+from ml.common import (
     embed_image,
     embed_texts,
     fetch_image,

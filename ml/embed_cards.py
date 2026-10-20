@@ -1,3 +1,9 @@
+"""Embed card images with SigLIP2.
+
+Run from the repository root:
+    python -m ml.embed_cards
+"""
+
 import argparse
 import json
 import re
@@ -11,7 +17,7 @@ from time import perf_counter
 
 import torch
 
-from common import (
+from ml.common import (
     create_http_session,
     embed_images,
     fetch_image,

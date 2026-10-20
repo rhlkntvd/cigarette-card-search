@@ -1,9 +1,15 @@
+"""Search saved image embeddings as a local baseline.
+
+Run from the repository root:
+    python -m ml.search
+"""
+
 import json
 from pathlib import Path
 
 import torch
 
-from common import (
+from ml.common import (
     embed_texts,
     get_iiif_url,
     load_model,
