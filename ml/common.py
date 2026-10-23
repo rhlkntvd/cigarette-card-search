@@ -8,17 +8,10 @@ from transformers import AutoModel, AutoProcessor
 from transformers.utils import logging as hf_logging
 from urllib3.util.retry import Retry
 
-DEBUG = False
-
 MODEL_NAME = "google/siglip2-base-patch16-224"
 
-
-if DEBUG:
-    hf_logging.set_verbosity_info()
-    hf_logging.enable_progress_bar()
-else:
-    hf_logging.set_verbosity_error()
-    hf_logging.disable_progress_bar()
+hf_logging.set_verbosity_error()
+hf_logging.disable_progress_bar()
 
 
 def get_device() -> torch.device:
