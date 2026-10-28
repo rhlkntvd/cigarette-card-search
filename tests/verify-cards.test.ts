@@ -10,7 +10,23 @@ const verifierPath = fileURLToPath(
   new URL("../scripts/verify-cards.ts", import.meta.url),
 );
 
-async function verifyCard(overrides: Record<string, unknown> = {}) {
+const rawRecord = {
+  id: "dpla-id",
+  provider: { name: "The New York Public Library" },
+  sourceResource: { collection: [{ title: "Cigarette cards" }] },
+};
+
+const validCard = {
+  dplaId: "dpla-id",
+  title: "A blue butterfly",
+  nyplUuid: "nypl-uuid",
+  frontImageId: "front-id",
+  sourceUrl: "https://digitalcollections.nypl.org/items/nypl-uuid",
+  rights: null,
+  displayEligible: false,
+};
+
+async function verifyDataset(raw: string, processed: string) {
   const directory = await mkdtemp(path.join(tmpdir(), "verify-cards-"));
 
   try {
@@ -19,31 +35,8 @@ async function verifyCard(overrides: Record<string, unknown> = {}) {
     await mkdir(rawDirectory, { recursive: true });
     await mkdir(processedDirectory, { recursive: true });
 
-    const rawRecord = {
-      id: "dpla-id",
-      provider: { name: "The New York Public Library" },
-      sourceResource: { collection: [{ title: "Cigarette cards" }] },
-    };
-
-    const card = {
-      dplaId: "dpla-id",
-      title: "A blue butterfly",
-      nyplUuid: "nypl-uuid",
-      frontImageId: "front-id",
-      sourceUrl: "https://digitalcollections.nypl.org/items/nypl-uuid",
-      rights: null,
-      displayEligible: false,
-      ...overrides,
-    };
-
-    await writeFile(
-      path.join(rawDirectory, "cigarette-cards.jsonl"),
-      JSON.stringify(rawRecord) + "\n",
-    );
-    await writeFile(
-      path.join(processedDirectory, "cards.jsonl"),
-      JSON.stringify(card) + "\n",
-    );
+    await writeFile(path.join(rawDirectory, "cigarette-cards.jsonl"), raw);
+    await writeFile(path.join(processedDirectory, "cards.jsonl"), processed);
 
     const result = spawnSync(
       process.execPath,
@@ -57,6 +50,47 @@ async function verifyCard(overrides: Record<string, unknown> = {}) {
     await rm(directory, { recursive: true, force: true });
   }
 }
+
+async function verifyCard(overrides: Record<string, unknown> = {}) {
+  return verifyDataset(
+    JSON.stringify(rawRecord) + "\n",
+    JSON.stringify({ ...validCard, ...overrides }) + "\n",
+  );
+}
+
+test("rejects two empty datasets even when their counts match", async () => {
+  const result = await verifyDataset("", "");
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /Raw dataset is empty/);
+  assert.match(result.stderr, /Processed dataset is empty/);
+  assert.match(result.stderr, /Dataset verification failed/);
+  assert.doesNotMatch(result.stdout, /Dataset verification passed/);
+});
+
+test("rejects datasets containing only whitespace and blank lines", async () => {
+  const result = await verifyDataset(" \n\t\n", "\r\n \t\r\n");
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /Raw dataset is empty/);
+  assert.match(result.stderr, /Processed dataset is empty/);
+});
+
+test("identifies an empty raw dataset when the processed dataset has a card", async () => {
+  const result = await verifyDataset("", JSON.stringify(validCard) + "\n");
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /Raw dataset is empty/);
+  assert.doesNotMatch(result.stderr, /Processed dataset is empty/);
+});
+
+test("identifies an empty processed dataset when the raw dataset has a record", async () => {
+  const result = await verifyDataset(JSON.stringify(rawRecord) + "\n", "");
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /Processed dataset is empty/);
+  assert.doesNotMatch(result.stderr, /Raw dataset is empty/);
+});
 
 test("rejects a missing title with a failing exit status", async () => {
   const result = await verifyCard({ title: undefined });

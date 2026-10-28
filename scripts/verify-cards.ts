@@ -343,6 +343,14 @@ async function main() {
 
   const errors: string[] = [];
 
+  if (rawCount === 0) {
+    errors.push("Raw dataset is empty");
+  }
+
+  if (processedCount === 0) {
+    errors.push("Processed dataset is empty");
+  }
+
   if (rawCount !== processedCount) {
     errors.push(
       `Raw count (${rawCount}) ` +
