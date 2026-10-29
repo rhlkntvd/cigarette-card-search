@@ -8,6 +8,7 @@ const PROVIDER_NAME = "The New York Public Library";
 
 const PAGE_SIZE = 500;
 const MAX_PAGE = 100;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 const OUTPUT_PATH = path.resolve("data/raw/cigarette-cards.jsonl");
 
@@ -47,15 +48,39 @@ async function fetchPage(apiKey: string, page: number): Promise<DplaResponse> {
 
   console.log(`Fetching page ${page}...`);
 
-  const response = await fetch(url);
+  const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  let response: Response;
+  let responseText: string;
+
+  try {
+    response = await fetch(url, { signal });
+    responseText = await response.text();
+  } catch (error: unknown) {
+    if (signal.aborted) {
+      throw new Error(
+        `DPLA request for page ${page} timed out after ${REQUEST_TIMEOUT_MS} ms`,
+        { cause: error },
+      );
+    }
+
+    throw new Error(`DPLA request for page ${page} failed`, { cause: error });
+  }
 
   if (!response.ok) {
     throw new Error(
-      `DPLA request failed: ` + `${response.status} ` + response.statusText,
+      `DPLA request for page ${page} returned ${response.status}: ${response.statusText}`,
     );
   }
 
-  const data: unknown = await response.json();
+  let data: unknown;
+
+  try {
+    data = JSON.parse(responseText);
+  } catch (error: unknown) {
+    throw new Error(`DPLA response for page ${page} contained invalid JSON`, {
+      cause: error,
+    });
+  }
 
   if (
     typeof data !== "object" ||
@@ -65,7 +90,7 @@ async function fetchPage(apiKey: string, page: number): Promise<DplaResponse> {
     !("count" in data) ||
     typeof data.count !== "number"
   ) {
-    throw new Error("Unexpected DPLA API response");
+    throw new Error(`Unexpected DPLA API response for page ${page}`);
   }
 
   return {
