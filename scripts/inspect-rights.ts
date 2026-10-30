@@ -4,28 +4,45 @@ import readline from "node:readline";
 
 const INPUT_PATH = path.resolve("data/raw/cigarette-cards.jsonl");
 
-interface DplaRecord {
-  id?: string;
-  rights?: string;
-
-  sourceResource?: {
-    title?: string[] | string;
-  };
-
-  originalRecord?: {
-    stringValue?: string;
-  };
+interface Sample {
+  record: Record<string, unknown>;
+  context: string;
 }
 
-function getTitle(record: DplaRecord): string {
-  const title = record.sourceResource?.title;
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseObject(json: string, context: string): Record<string, unknown> {
+  let value: unknown;
+
+  try {
+    value = JSON.parse(json);
+  } catch (error: unknown) {
+    throw new Error(`Invalid JSON in ${context}`, { cause: error });
+  }
+
+  if (!isObject(value)) {
+    throw new Error(`Expected a JSON object in ${context}`);
+  }
+
+  return value;
+}
+
+function getTitle(record: Record<string, unknown>): string {
+  const title = isObject(record.sourceResource)
+    ? record.sourceResource.title
+    : undefined;
 
   if (typeof title === "string" && title.length > 0) {
     return title;
   }
 
   if (Array.isArray(title)) {
-    return title[0] ?? "Untitled";
+    const firstTitle: unknown = title[0];
+    return typeof firstTitle === "string" && firstTitle.length > 0
+      ? firstTitle
+      : "Untitled";
   }
 
   return "Untitled";
@@ -62,22 +79,27 @@ function findRightsFields(value: unknown, currentPath = ""): void {
   }
 }
 
-function inspectRecord(record: DplaRecord): void {
+function inspectRecord({ record, context }: Sample): void {
   console.log();
   console.log("==============================");
   console.log(getTitle(record));
   console.log(`DPLA rights: ${record.rights ?? "(missing)"}`);
   console.log("==============================");
 
-  const originalValue = record.originalRecord?.stringValue;
+  const originalValue = isObject(record.originalRecord)
+    ? record.originalRecord.stringValue
+    : undefined;
 
-  if (!originalValue) {
-    console.log("No original record");
+  if (typeof originalValue !== "string" || !originalValue.trim()) {
+    console.log(`Missing or invalid originalRecord.stringValue in ${context}`);
     return;
   }
 
   try {
-    const original: unknown = JSON.parse(originalValue);
+    const original = parseObject(
+      originalValue,
+      `originalRecord.stringValue in ${context}`,
+    );
 
     findRightsFields(original);
   } catch (error) {
@@ -93,33 +115,45 @@ async function main() {
     crlfDelay: Infinity,
   });
 
-  let undRecord: DplaRecord | null = null;
-  let noCopyrightRecord: DplaRecord | null = null;
+  let undRecord: Sample | null = null;
+  let noCopyrightRecord: Sample | null = null;
+  let lineNumber = 0;
 
-  for await (const line of lines) {
-    if (line.trim().length === 0) {
-      continue;
+  try {
+    for await (const line of lines) {
+      lineNumber += 1;
+
+      if (line.trim().length === 0) {
+        continue;
+      }
+
+      const context = `${INPUT_PATH} at line ${lineNumber}`;
+      const record = parseObject(line, context);
+      const rights = record.rights;
+
+      if (rights === undefined || rights === null) {
+        continue;
+      }
+
+      if (typeof rights !== "string") {
+        throw new Error(`Expected rights to be a string in ${context}`);
+      }
+
+      if (undRecord === null && rights.includes("/UND/")) {
+        undRecord = { record, context };
+      }
+
+      if (noCopyrightRecord === null && rights.includes("/NoC-US/")) {
+        noCopyrightRecord = { record, context };
+      }
+
+      if (undRecord !== null && noCopyrightRecord !== null) {
+        break;
+      }
     }
-
-    let record: DplaRecord;
-
-    try {
-      record = JSON.parse(line) as DplaRecord;
-    } catch {
-      continue;
-    }
-
-    if (undRecord === null && record.rights?.includes("/UND/")) {
-      undRecord = record;
-    }
-
-    if (noCopyrightRecord === null && record.rights?.includes("/NoC-US/")) {
-      noCopyrightRecord = record;
-    }
-
-    if (undRecord !== null && noCopyrightRecord !== null) {
-      break;
-    }
+  } finally {
+    lines.close();
+    inputStream.destroy();
   }
 
   if (undRecord !== null) {
