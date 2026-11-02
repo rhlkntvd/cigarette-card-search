@@ -574,6 +574,9 @@ def finalize_outputs():
 def main():
     args = parse_args()
 
+    if args.limit is not None and args.limit < 1:
+        raise ValueError("limit must be at least 1")
+
     if args.batch_size < 1:
         raise ValueError("batch size must be at least 1")
 
