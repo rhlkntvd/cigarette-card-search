@@ -1,6 +1,6 @@
 import pgvector from "pgvector";
-import { getSql } from "./db.js";
-import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector.js";
+import { getSql } from "./db";
+import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector";
 
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 100;

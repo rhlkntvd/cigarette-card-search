@@ -1,4 +1,4 @@
-import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector.js";
+import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
