@@ -35,3 +35,202 @@ h1 {
   max-width: 36rem;
   font-size: 1.125rem;
 }
+
+.search-form {
+  margin-top: 2.5rem;
+}
+
+.search-form label {
+  font-weight: 600;
+}
+
+.search-input-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.search-input-row input,
+.search-input-row button {
+  min-height: 3rem;
+  border: 1px solid #858b81;
+  border-radius: 0.25rem;
+  padding: 0.75rem 1rem;
+  font: inherit;
+}
+
+.search-input-row input {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  color: inherit;
+}
+
+.search-input-row button {
+  border-color: #264b3b;
+  padding-inline: 1.5rem;
+  background: #264b3b;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-input-row button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+:focus-visible {
+  outline: 3px solid #264b3b;
+  outline-offset: 4px;
+}
+
+.search-help,
+.search-status,
+.card-source {
+  color: #4c554d;
+}
+
+.search-help {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+}
+
+.search-status {
+  min-height: 1.6em;
+  margin: 1.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+.search-error {
+  color: #8f2723;
+}
+
+h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.75rem;
+  font-weight: 400;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.result-card {
+  position: relative;
+  display: block;
+  height: 100%;
+  border: 1px solid #d6d2c9;
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.result-card:hover h3 {
+  text-decoration: underline;
+}
+
+.card-image {
+  position: relative;
+  display: grid;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 0.5rem 0.5rem 0 0;
+  place-items: center;
+  padding: 1rem;
+  background: #eae6dd;
+  color: #4c554d;
+}
+
+.card-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.card-image img.image-loading {
+  visibility: hidden;
+}
+
+.image-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.image-retry {
+  position: relative;
+  z-index: 1;
+  border: 1px solid #858b81;
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  background: #fff;
+  color: #264b3b;
+  font: inherit;
+  cursor: pointer;
+}
+
+.card-details {
+  display: block;
+  padding: 1rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Keep the whole card clickable, with retries outside the link. */
+.card-details::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 0.5rem;
+}
+
+.card-details:focus-visible {
+  outline: none;
+}
+
+.card-details:focus-visible::after {
+  outline: 3px solid #264b3b;
+  outline-offset: 4px;
+}
+
+.card-details h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.card-source {
+  font-size: 0.9rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 30rem) {
+  main {
+    padding-top: 3rem;
+  }
+
+  .search-input-row {
+    flex-direction: column;
+  }
+}

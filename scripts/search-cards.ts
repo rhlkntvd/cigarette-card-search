@@ -10,13 +10,7 @@ import { embedText } from "../src/embedding.js";
 
 import { searchCards } from "../src/search.js";
 
-function getIiifUrl(imageId: string): string {
-  return (
-    "https://iiif.nypl.org/iiif/3/" +
-    `${imageId}` +
-    "/full/^!512,512/0/default.jpg"
-  );
-}
+import { getIiifUrl } from "../src/iiif.js";
 
 async function main() {
   const publicOnly = process.argv.includes("--public-only");

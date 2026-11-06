@@ -1,3 +1,5 @@
+import CardSearch from "./card-search";
+
 export default function HomePage() {
   return (
     <main>
@@ -6,6 +8,7 @@ export default function HomePage() {
       <p className="introduction">
         Explore the collection through natural-language image search.
       </p>
+      <CardSearch />
     </main>
   );
 }
