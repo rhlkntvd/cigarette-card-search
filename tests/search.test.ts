@@ -49,10 +49,27 @@ test("rejects invalid limits before requiring database configuration", async () 
 test("accepts the default and boundary limits before requesting a client", async () => {
   const embedding = Array(768).fill(1);
 
-  for (const options of [{}, { limit: 1 }, { limit: 100 }]) {
+  for (const options of [
+    {},
+    { limit: 1 },
+    { limit: 100 },
+    { offset: 0 },
+    { offset: 6 },
+  ]) {
     await assert.rejects(
       searchCards(embedding, options),
       /DATABASE_URL is not set/,
+    );
+  }
+});
+
+test("rejects invalid offsets before requiring database configuration", async () => {
+  const embedding = Array(768).fill(1);
+
+  for (const offset of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(
+      searchCards(embedding, { offset }),
+      /Search offset must be a nonnegative safe integer/,
     );
   }
 });

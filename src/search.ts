@@ -18,6 +18,7 @@ export interface SearchResult {
 
 export interface SearchOptions {
   limit?: number;
+  offset?: number;
   publicOnly?: boolean;
 }
 
@@ -32,11 +33,16 @@ export async function searchCards(
   }
 
   const limit = options.limit ?? DEFAULT_LIMIT;
+  const offset = options.offset ?? 0;
 
   const publicOnly = options.publicOnly ?? false;
 
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
     throw new Error(`Search limit must be between ` + `1 and ${MAX_LIMIT}`);
+  }
+
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new Error("Search offset must be a nonnegative safe integer");
   }
 
   const queryVector = pgvector.toSql(embedding);
@@ -81,11 +87,14 @@ export async function searchCards(
       OR cards.display_eligible
     )
 
+    -- Stabilize equal-distance results across pages.
     ORDER BY
       cards.embedding
-      <=> query.embedding
+      <=> query.embedding,
+      cards.dpla_id
 
     LIMIT ${limit}
+    OFFSET ${offset}
   `;
 
   return rows;

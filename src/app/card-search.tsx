@@ -1,91 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { SubmitEvent } from "react";
 
-import { getIiifUrl } from "../iiif";
 import type { SearchResult } from "../search";
 import { fetchSearchResults } from "./search-client";
-
-const IMAGE_LOAD_TIMEOUT_MS = 20_000;
+import CardImage from "./card-image";
+import CardDetail from "./card-detail";
+import { SEARCH_PAGE_SIZE } from "./search-page";
 
 type SearchState =
   | { status: "idle" }
   | { status: "loading"; query: string }
-  | { status: "success"; query: string; results: SearchResult[] }
-  | { status: "error"; message: string };
-
-function CardImage({ imageId, title }: { imageId: string; title: string }) {
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">(
-    "loading",
-  );
-  const [attempt, setAttempt] = useState(0);
-  const imageUrl = getIiifUrl(imageId);
-
-  // Give retries a fresh URL instead of reusing a stalled request.
-  const source = attempt === 0 ? imageUrl : `${imageUrl}?retry=${attempt}`;
-
-  useEffect(() => {
-    if (status !== "loading") {
-      return;
+  | {
+      status: "success";
+      query: string;
+      results: SearchResult[];
+      hasMore: boolean;
+      loadingMore: boolean;
+      moreError: string | null;
     }
-
-    // NYPL can stall without firing an image error.
-    const timeout = setTimeout(() => {
-      setStatus((current) => (current === "loading" ? "error" : current));
-    }, IMAGE_LOAD_TIMEOUT_MS);
-
-    return () => clearTimeout(timeout);
-  }, [status]);
-
-  return (
-    <div className="card-image">
-      {status === "error" ? (
-        <div className="image-message" role="status">
-          <span>Image unavailable</span>
-          <button
-            type="button"
-            className="image-retry"
-            aria-label={`Retry image for ${title}`}
-            onClick={() => {
-              setAttempt((current) => current + 1);
-              setStatus("loading");
-            }}
-          >
-            Retry image
-          </button>
-        </div>
-      ) : (
-        <>
-          {status === "loading" && (
-            <span className="image-message">Loading image…</span>
-          )}
-          <img
-            className={status === "loading" ? "image-loading" : undefined}
-            src={source}
-            alt={title}
-            width={512}
-            height={512}
-            loading="eager"
-            decoding="async"
-            onLoad={() => setStatus("loaded")}
-            onError={() => setStatus("error")}
-          />
-        </>
-      )}
-    </div>
-  );
-}
+  | { status: "error"; message: string };
 
 export default function CardSearch() {
   const [query, setQuery] = useState("");
+  const [selectedCard, setSelectedCard] = useState<SearchResult | null>(null);
   const [search, setSearch] = useState<SearchState>({ status: "idle" });
   const isLoading = search.status === "loading";
+  const isLoadingMore = search.status === "success" && search.loadingMore;
+  const isBusy = isLoading || isLoadingMore;
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (isLoading) {
+    if (isBusy) {
       return;
     }
 
@@ -96,11 +44,18 @@ export default function CardSearch() {
       return;
     }
 
+    setSelectedCard(null);
     setSearch({ status: "loading", query: normalizedQuery });
 
     try {
-      const results = await fetchSearchResults(normalizedQuery);
-      setSearch({ status: "success", query: normalizedQuery, results });
+      const page = await fetchSearchResults(normalizedQuery);
+      setSearch({
+        status: "success",
+        query: normalizedQuery,
+        ...page,
+        loadingMore: false,
+        moreError: null,
+      });
     } catch (error: unknown) {
       setSearch({
         status: "error",
@@ -108,6 +63,48 @@ export default function CardSearch() {
           error instanceof Error
             ? error.message
             : "Search is unavailable. Please try again.",
+      });
+    }
+  }
+
+  async function handleShowMore() {
+    if (search.status !== "success" || !search.hasMore || search.loadingMore) {
+      return;
+    }
+
+    setSearch({ ...search, loadingMore: true, moreError: null });
+
+    try {
+      const page = await fetchSearchResults(
+        search.query,
+        search.results.length,
+      );
+      setSearch((current) => {
+        if (current.status !== "success" || current.query !== search.query) {
+          return current;
+        }
+
+        return {
+          ...current,
+          results: [...current.results, ...page.results],
+          hasMore: page.hasMore,
+          loadingMore: false,
+        };
+      });
+    } catch (error: unknown) {
+      setSearch((current) => {
+        if (current.status !== "success" || current.query !== search.query) {
+          return current;
+        }
+
+        return {
+          ...current,
+          loadingMore: false,
+          moreError:
+            error instanceof Error
+              ? error.message
+              : "Could not load more results. Please try again.",
+        };
       });
     }
   }
@@ -121,14 +118,14 @@ export default function CardSearch() {
             id="search-query"
             name="query"
             type="search"
-            placeholder="a blue butterfly"
+            placeholder="a colorful sunset"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-describedby="search-help"
             aria-invalid={search.status === "error" && !query.trim()}
             required
           />
-          <button type="submit" disabled={isLoading}>
+          <button type="submit" disabled={isBusy}>
             {isLoading ? "Searching…" : "Search"}
           </button>
         </div>
@@ -143,6 +140,7 @@ export default function CardSearch() {
           (search.results.length === 0
             ? `No cards found for “${search.query}”. Try a different description.`
             : `${search.results.length} result${search.results.length === 1 ? "" : "s"} for “${search.query}”.`)}
+        {isLoadingMore && " Loading more…"}
       </p>
 
       {search.status === "error" && (
@@ -159,26 +157,69 @@ export default function CardSearch() {
               <li key={card.dplaId}>
                 <article className="result-card">
                   <CardImage imageId={card.frontImageId} title={card.title} />
-                  <a
-                    className="card-details"
-                    href={card.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <h3>{card.title}</h3>
-                    <span className="card-source">
-                      View at NYPL
-                      <span className="visually-hidden">
-                        {" "}
-                        (opens in a new tab)
+                  <div className="card-details">
+                    <h3>
+                      <button
+                        type="button"
+                        className="card-open"
+                        aria-haspopup="dialog"
+                        onClick={() => setSelectedCard(card)}
+                      >
+                        {card.title}
+                      </button>
+                    </h3>
+                    <div className="card-actions">
+                      <span>
+                        View card <span aria-hidden="true">→</span>
                       </span>
-                    </span>
-                  </a>
+                      <a
+                        className="card-source"
+                        href={card.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        NYPL <span aria-hidden="true">↗</span>
+                        <span className="visually-hidden">
+                          {" "}
+                          (opens in a new tab)
+                        </span>
+                      </a>
+                    </div>
+                  </div>
                 </article>
               </li>
             ))}
           </ol>
+          <div className="pagination-controls">
+            {search.moreError && (
+              <p className="pagination-error" role="alert">
+                {search.moreError}
+              </p>
+            )}
+            {search.hasMore ? (
+              <button
+                type="button"
+                className="show-more"
+                disabled={search.loadingMore}
+                onClick={handleShowMore}
+              >
+                {search.loadingMore
+                  ? "Loading…"
+                  : `Show ${SEARCH_PAGE_SIZE} more`}
+              </button>
+            ) : (
+              <p className="end-of-results">All available results are shown.</p>
+            )}
+          </div>
         </section>
+      )}
+
+      {selectedCard && (
+        <CardDetail
+          key={selectedCard.dplaId}
+          card={selectedCard}
+          onClose={() => setSelectedCard(null)}
+        />
       )}
     </>
   );

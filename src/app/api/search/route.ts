@@ -1,6 +1,7 @@
 import { embedText } from "../../../embedding";
 import { searchCards } from "../../../search";
 import { getSearchScope } from "../../search-scope";
+import { SEARCH_PAGE_SIZE } from "../../search-page";
 
 export const runtime = "nodejs";
 
@@ -33,12 +34,15 @@ export async function POST(request: Request): Promise<Response> {
     typeof body !== "object" ||
     body === null ||
     Array.isArray(body) ||
-    Object.keys(body).some((key) => key !== "query") ||
+    Object.keys(body).some((key) => key !== "query" && key !== "offset") ||
     !("query" in body) ||
     typeof body.query !== "string"
   ) {
     return Response.json(
-      { error: "Request body must contain only a query string." },
+      {
+        error:
+          "Request body must contain a query string and an optional offset.",
+      },
       { status: 400 },
     );
   }
@@ -52,12 +56,32 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  const offset = "offset" in body ? body.offset : 0;
+
+  if (
+    typeof offset !== "number" ||
+    !Number.isSafeInteger(offset) ||
+    offset < 0
+  ) {
+    return Response.json(
+      { error: "Offset must be a nonnegative safe integer." },
+      { status: 400 },
+    );
+  }
+
   try {
     const publicOnly = getSearchScope() === "public";
     const embedding = await embedText(query);
-    const results = await searchCards(embedding, { publicOnly });
+    const rows = await searchCards(embedding, {
+      publicOnly,
+      limit: SEARCH_PAGE_SIZE + 1,
+      offset,
+    });
 
-    return Response.json({ results });
+    return Response.json({
+      results: rows.slice(0, SEARCH_PAGE_SIZE),
+      hasMore: rows.length > SEARCH_PAGE_SIZE,
+    });
   } catch (error: unknown) {
     console.error("Card search failed:", error);
 

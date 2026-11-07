@@ -1,4 +1,6 @@
 import type { SearchResult } from "../search";
+import { SEARCH_PAGE_SIZE } from "./search-page";
+import type { SearchPage } from "./search-page";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -25,14 +27,15 @@ function isSearchResult(value: unknown): value is SearchResult {
 
 export async function fetchSearchResults(
   query: string,
-): Promise<SearchResult[]> {
+  offset = 0,
+): Promise<SearchPage> {
   let response: Response;
 
   try {
     response = await fetch("/api/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, offset }),
     });
   } catch (error: unknown) {
     throw new Error("Could not reach search. Please try again.", {
@@ -54,10 +57,12 @@ export async function fetchSearchResults(
   if (
     !isObject(body) ||
     !Array.isArray(body.results) ||
-    !body.results.every(isSearchResult)
+    body.results.length > SEARCH_PAGE_SIZE ||
+    !body.results.every(isSearchResult) ||
+    typeof body.hasMore !== "boolean"
   ) {
     throw new Error("Could not read search results. Please try again.");
   }
 
-  return body.results;
+  return { results: body.results, hasMore: body.hasMore };
 }

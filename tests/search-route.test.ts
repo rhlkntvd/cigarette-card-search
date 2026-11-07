@@ -99,11 +99,51 @@ test("rejects malformed query fields and client-supplied scope options", async (
     const response = await POST(request(body));
     assert.equal(response.status, 400, JSON.stringify(body));
     assert.deepEqual(await response.json(), {
-      error: "Request body must contain only a query string.",
+      error: "Request body must contain a query string and an optional offset.",
     });
   }
 
   assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("rejects malformed offsets before requesting an embedding", async (t) => {
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Unexpected embedding request");
+  });
+
+  for (const offset of [
+    null,
+    -1,
+    1.5,
+    "6",
+    {},
+    [],
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    const response = await POST(request({ query: "butterfly", offset }));
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "Offset must be a nonnegative safe integer.",
+    });
+  }
+
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("accepts a valid page offset before requesting database configuration", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({
+      dimensions: 768,
+      embedding: Array(768).fill(1),
+    }),
+  );
+  const errorMock = t.mock.method(console, "error", () => {});
+
+  const response = await POST(request({ query: "butterfly", offset: 6 }));
+  assert.equal(response.status, 500);
+  const loggedError: unknown = errorMock.mock.calls[0]?.arguments[1];
+  assert.ok(loggedError instanceof Error);
+  assert.equal(loggedError.message, "DATABASE_URL is not set");
 });
 
 test("rejects blank queries before calling the embedding service", async (t) => {

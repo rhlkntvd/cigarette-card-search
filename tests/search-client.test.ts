@@ -25,20 +25,52 @@ test("posts the query to the same-origin search endpoint and returns cards", asy
       assert.deepEqual(options?.headers, {
         "Content-Type": "application/json",
       });
-      assert.equal(options?.body, JSON.stringify({ query: "blue butterfly" }));
-      return Response.json({ results: [card] });
+      assert.equal(
+        options?.body,
+        JSON.stringify({ query: "blue butterfly", offset: 0 }),
+      );
+      return Response.json({ results: [card], hasMore: false });
     },
   );
 
-  assert.deepEqual(await fetchSearchResults("blue butterfly"), [card]);
+  assert.deepEqual(await fetchSearchResults("blue butterfly"), {
+    results: [card],
+    hasMore: false,
+  });
   assert.equal(fetchMock.mock.callCount(), 1);
 });
 
 test("accepts empty results", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
-    Response.json({ results: [] }),
+    Response.json({ results: [], hasMore: false }),
   );
-  assert.deepEqual(await fetchSearchResults("butterfly"), []);
+  assert.deepEqual(await fetchSearchResults("butterfly"), {
+    results: [],
+    hasMore: false,
+  });
+});
+
+test("requests the next six results and preserves the hasMore flag", async (t) => {
+  const cards = Array.from({ length: 6 }, (_, index) => ({
+    ...card,
+    dplaId: `card-${index}`,
+  }));
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: Parameters<typeof fetch>[0], options?: RequestInit) => {
+      assert.equal(
+        options?.body,
+        JSON.stringify({ query: "butterfly", offset: 6 }),
+      );
+      return Response.json({ results: cards, hasMore: true });
+    },
+  );
+
+  assert.deepEqual(await fetchSearchResults("butterfly", 6), {
+    results: cards,
+    hasMore: true,
+  });
 });
 
 test("shows the search endpoint's validation error", async (t) => {
@@ -79,14 +111,17 @@ test("rejects malformed successful responses instead of rendering invalid cards"
   const invalidBodies = [
     null,
     {},
-    { results: null },
-    { results: [null] },
-    { results: [{}] },
-    { results: [{ ...card, title: 42 }] },
-    { results: [{ ...card, frontImageId: "" }] },
-    { results: [{ ...card, sourceUrl: null }] },
-    { results: [{ ...card, displayEligible: "true" }] },
-    { results: [{ ...card, similarity: null }] },
+    { results: [] },
+    { results: [], hasMore: "true" },
+    { results: null, hasMore: false },
+    { results: [null], hasMore: false },
+    { results: [{}], hasMore: false },
+    { results: [{ ...card, title: 42 }], hasMore: false },
+    { results: [{ ...card, frontImageId: "" }], hasMore: false },
+    { results: [{ ...card, sourceUrl: null }], hasMore: false },
+    { results: [{ ...card, displayEligible: "true" }], hasMore: false },
+    { results: [{ ...card, similarity: null }], hasMore: false },
+    { results: Array(7).fill(card), hasMore: true },
   ];
   let responseBody: unknown;
   t.mock.method(globalThis, "fetch", async () => Response.json(responseBody));
