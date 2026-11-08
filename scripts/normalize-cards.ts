@@ -15,14 +15,14 @@ const TEMP_OUTPUT_PATH = `${OUTPUT_PATH}.tmp`;
 async function main() {
   await fs.mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
 
+  const outputFile = await fs.open(TEMP_OUTPUT_PATH, "w");
+
   const inputStream = createReadStream(INPUT_PATH, { encoding: "utf-8" });
 
   const lines = readline.createInterface({
     input: inputStream,
     crlfDelay: Infinity,
   });
-
-  const outputFile = await fs.open(TEMP_OUTPUT_PATH, "w");
 
   let recordsReceived = 0;
   let cardsNormalized = 0;
@@ -78,7 +78,16 @@ async function main() {
       cardsNormalized += 1;
     }
   } finally {
+    lines.close();
+    inputStream.destroy();
     await outputFile.close();
+  }
+
+  if (cardsNormalized === 0) {
+    throw new Error(
+      `No cards were normalized from ${recordsReceived} records; ` +
+        "keeping the published dataset",
+    );
   }
 
   await fs.rename(TEMP_OUTPUT_PATH, OUTPUT_PATH);

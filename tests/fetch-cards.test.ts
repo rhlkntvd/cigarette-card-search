@@ -18,6 +18,9 @@ type Scenario =
   | "http"
   | "invalid-json"
   | "invalid-response"
+  | "invalid-count"
+  | "empty-collection"
+  | "changed-count"
   | "request-timeout"
   | "body-timeout"
   | "second-page-failure";
@@ -71,6 +74,12 @@ globalThis.fetch = async (input, options) => {
   if (scenario === "invalid-response") {
     return Response.json({ count: 1, docs: null });
   }
+  if (scenario === "invalid-count") {
+    return Response.json({ count: 1.5, docs: [{ id: "card-0" }] });
+  }
+  if (scenario === "empty-collection") {
+    return Response.json({ count: 0, docs: [] });
+  }
   if (scenario === "request-timeout" || scenario === "body-timeout") {
     const error = new DOMException("Deadline exceeded", "TimeoutError");
     if (scenario === "request-timeout") {
@@ -89,7 +98,8 @@ globalThis.fetch = async (input, options) => {
   const docs = page === 1
     ? Array.from({ length: 500 }, (_, index) => ({ id: "card-" + index }))
     : [{ id: "card-500" }];
-  return Response.json({ count: 501, docs });
+  const count = scenario === "changed-count" && page === 2 ? 502 : 501;
+  return Response.json({ count, docs });
 };
 `,
     );
@@ -147,6 +157,18 @@ test("reports page-specific failures and preserves the published dataset", async
     {
       scenario: "invalid-response",
       message: /Unexpected DPLA API response for page 1/,
+    },
+    {
+      scenario: "invalid-count",
+      message: /Unexpected DPLA API response for page 1/,
+    },
+    {
+      scenario: "empty-collection",
+      message: /DPLA returned an empty collection/,
+    },
+    {
+      scenario: "changed-count",
+      message: /DPLA collection count changed on page 2: 501 to 502/,
     },
     {
       scenario: "request-timeout",

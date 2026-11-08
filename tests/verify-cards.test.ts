@@ -58,6 +58,28 @@ async function verifyCard(overrides: Record<string, unknown> = {}) {
   );
 }
 
+test("reports the file and line for malformed JSON and non-object records", async () => {
+  for (const invalid of ["not JSON", "[]", "null", "42"]) {
+    for (const file of ["raw", "processed"]) {
+      const result = await verifyDataset(
+        file === "raw" ? `\n${invalid}\n` : JSON.stringify(rawRecord) + "\n",
+        file === "processed"
+          ? `\n${invalid}\n`
+          : JSON.stringify(validCard) + "\n",
+      );
+
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stderr, /(?:Invalid JSON|Expected a JSON object) in/);
+      assert.match(
+        result.stderr,
+        file === "raw"
+          ? /data\/raw\/cigarette-cards\.jsonl at line 2/
+          : /data\/processed\/cards\.jsonl at line 2/,
+      );
+    }
+  }
+});
+
 test("rejects two empty datasets even when their counts match", async () => {
   const result = await verifyDataset("", "");
 

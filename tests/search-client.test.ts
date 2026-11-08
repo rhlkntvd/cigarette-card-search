@@ -113,6 +113,8 @@ test("rejects malformed successful responses instead of rendering invalid cards"
     {},
     { results: [] },
     { results: [], hasMore: "true" },
+    { results: [], hasMore: true },
+    { results: [card], hasMore: true },
     { results: null, hasMore: false },
     { results: [null], hasMore: false },
     { results: [{}], hasMore: false },

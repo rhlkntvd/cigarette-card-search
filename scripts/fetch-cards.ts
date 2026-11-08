@@ -88,7 +88,9 @@ async function fetchPage(apiKey: string, page: number): Promise<DplaResponse> {
     !("docs" in data) ||
     !Array.isArray(data.docs) ||
     !("count" in data) ||
-    typeof data.count !== "number"
+    typeof data.count !== "number" ||
+    !Number.isSafeInteger(data.count) ||
+    data.count < 0
   ) {
     throw new Error(`Unexpected DPLA API response for page ${page}`);
   }
@@ -124,6 +126,12 @@ async function main() {
       if (totalAvailable === null) {
         totalAvailable = data.count;
 
+        if (totalAvailable === 0) {
+          throw new Error(
+            "DPLA returned an empty collection; keeping the published dataset",
+          );
+        }
+
         const maximumRetrievable = PAGE_SIZE * MAX_PAGE;
 
         if (totalAvailable > maximumRetrievable) {
@@ -136,6 +144,11 @@ async function main() {
 
         console.log(`Found ${totalAvailable} matching records`);
         console.log();
+      } else if (data.count !== totalAvailable) {
+        throw new Error(
+          `DPLA collection count changed on page ${page}: ` +
+            `${totalAvailable} to ${data.count}; retry the fetch`,
+        );
       }
 
       if (data.docs.length === 0) {

@@ -12,31 +12,8 @@ const EXPECTED_PROVIDER = "The New York Public Library";
 
 const EXPECTED_COLLECTION = "Cigarette cards";
 
-interface RawRecord {
-  id?: unknown;
-
-  provider?: {
-    name?: unknown;
-  };
-
-  sourceResource?: {
-    collection?: unknown;
-  };
-}
-
-interface RawCollection {
-  title?: unknown;
-}
-
-interface ProcessedCard {
-  dplaId?: unknown;
-  title?: unknown;
-  nyplUuid?: unknown;
-  frontImageId?: unknown;
-  backImageId?: unknown;
-  sourceUrl?: unknown;
-  rights?: unknown;
-  displayEligible?: unknown;
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -45,7 +22,7 @@ function isNonEmptyString(value: unknown): value is string {
 
 async function forEachJsonl(
   filePath: string,
-  callback: (value: unknown, lineNumber: number) => void,
+  callback: (value: Record<string, unknown>) => void,
 ) {
   const input = createReadStream(filePath, { encoding: "utf-8" });
 
@@ -56,47 +33,47 @@ async function forEachJsonl(
 
   let lineNumber = 0;
 
-  for await (const line of lines) {
-    lineNumber += 1;
+  try {
+    for await (const line of lines) {
+      lineNumber += 1;
 
-    if (!line.trim()) {
-      continue;
+      if (!line.trim()) {
+        continue;
+      }
+
+      let parsed: unknown;
+      const context = `${filePath} at line ${lineNumber}`;
+
+      try {
+        parsed = JSON.parse(line);
+      } catch (error: unknown) {
+        throw new Error(`Invalid JSON in ${context}`, { cause: error });
+      }
+
+      if (!isObject(parsed)) {
+        throw new Error(`Expected a JSON object in ${context}`);
+      }
+
+      callback(parsed);
     }
-
-    let parsed: unknown;
-
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      throw new Error(`Invalid JSON in ${filePath} ` + `at line ${lineNumber}`);
-    }
-
-    callback(parsed, lineNumber);
+  } finally {
+    lines.close();
+    input.destroy();
   }
 }
 
-function hasExpectedCollection(record: RawRecord): boolean {
-  const collection = record.sourceResource?.collection;
+function hasExpectedCollection(record: Record<string, unknown>): boolean {
+  const collection = isObject(record.sourceResource)
+    ? record.sourceResource.collection
+    : undefined;
 
   if (Array.isArray(collection)) {
-    return collection.some((item) => {
-      if (typeof item !== "object" || item === null) {
-        return false;
-      }
-
-      const candidate = item as RawCollection;
-
-      return candidate.title === EXPECTED_COLLECTION;
-    });
+    return collection.some(
+      (item) => isObject(item) && item.title === EXPECTED_COLLECTION,
+    );
   }
 
-  if (typeof collection === "object" && collection !== null) {
-    const candidate = collection as RawCollection;
-
-    return candidate.title === EXPECTED_COLLECTION;
-  }
-
-  return false;
+  return isObject(collection) && collection.title === EXPECTED_COLLECTION;
 }
 
 async function main() {
@@ -112,16 +89,13 @@ async function main() {
 
   const rawDplaIds = new Set<string>();
 
-  await forEachJsonl(RAW_PATH, (value) => {
-    if (typeof value !== "object" || value === null) {
-      throw new Error("Raw JSONL contains " + "a non-object record");
-    }
-
-    const record = value as RawRecord;
-
+  await forEachJsonl(RAW_PATH, (record) => {
     rawCount += 1;
 
-    if (record.provider?.name !== EXPECTED_PROVIDER) {
+    if (
+      !isObject(record.provider) ||
+      record.provider.name !== EXPECTED_PROVIDER
+    ) {
       wrongProviderCount += 1;
     }
 
@@ -173,13 +147,7 @@ async function main() {
 
   const rightsCounts = new Map<string, number>();
 
-  await forEachJsonl(PROCESSED_PATH, (value) => {
-    if (typeof value !== "object" || value === null) {
-      throw new Error("Processed JSONL contains " + "a non-object record");
-    }
-
-    const card = value as ProcessedCard;
-
+  await forEachJsonl(PROCESSED_PATH, (card) => {
     processedCount += 1;
 
     /*

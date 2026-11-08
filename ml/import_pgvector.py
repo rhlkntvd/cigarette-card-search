@@ -99,6 +99,7 @@ def load_embeddings() -> torch.Tensor:
     embeddings = torch.load(
         EMBEDDINGS_PATH,
         map_location="cpu",
+        weights_only=True,
     )
 
     if not isinstance(
@@ -119,12 +120,20 @@ def load_embeddings() -> torch.Tensor:
             f"got {embeddings.shape[1]}"
         )
 
+    if embeddings.shape[0] == 0:
+        raise RuntimeError("Embedding tensor is empty")
+
+    embeddings = embeddings.float()
+
     if not torch.isfinite(
         embeddings,
     ).all():
         raise RuntimeError("Embedding tensor contains " "NaN or infinite values")
 
-    return embeddings.float()
+    if not (embeddings != 0).any(dim=1).all():
+        raise RuntimeError("Embedding tensor contains zero vectors")
+
+    return embeddings
 
 
 def validate_alignment(
@@ -153,18 +162,39 @@ def make_row(
     card: dict[str, Any],
     embedding: torch.Tensor,
 ) -> tuple[Any, ...]:
-    required_fields = [
+    required_fields = (
         "dplaId",
         "nyplUuid",
         "title",
         "frontImageId",
         "sourceUrl",
-        "displayEligible",
-    ]
+    )
 
     for field in required_fields:
-        if field not in card:
-            raise RuntimeError(f"Card is missing required " f"field: {field}")
+        value = card.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeError(
+                f"Card {card.get('dplaId', '(unknown)')}: "
+                f"{field} must be a nonempty string"
+            )
+
+    if not isinstance(card.get("displayEligible"), bool):
+        raise RuntimeError(f"Card {card['dplaId']}: displayEligible must be a boolean")
+
+    if "rights" not in card or (
+        card["rights"] is not None
+        and (not isinstance(card["rights"], str) or not card["rights"].strip())
+    ):
+        raise RuntimeError(
+            f"Card {card['dplaId']}: rights must be a nonempty string or null"
+        )
+
+    if "backImageId" in card and (
+        not isinstance(card["backImageId"], str) or not card["backImageId"].strip()
+    ):
+        raise RuntimeError(
+            f"Card {card['dplaId']}: backImageId must be a nonempty string when present"
+        )
 
     return (
         card["dplaId"],

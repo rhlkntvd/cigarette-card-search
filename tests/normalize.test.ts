@@ -127,7 +127,7 @@ test("keeps uncertain rights ineligible and missing or malformed rights null", (
 });
 
 test("returns the existing skip reasons for malformed records", () => {
-  for (const record of [undefined, null, false, 12, "not an object"]) {
+  for (const record of [undefined, null, false, 12, [], "not an object"]) {
     assert.deepEqual(normalizeRecord(record), {
       ok: false,
       reason: "invalidRawRecord",
@@ -157,6 +157,7 @@ test("returns the existing skip reasons for malformed records", () => {
     { stringValue: "not JSON" },
     { stringValue: "null" },
     { stringValue: "12" },
+    { stringValue: "[]" },
   ]) {
     assert.deepEqual(normalizeRecord({ ...makeRecord(), originalRecord }), {
       ok: false,

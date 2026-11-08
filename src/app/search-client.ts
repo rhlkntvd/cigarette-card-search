@@ -59,7 +59,8 @@ export async function fetchSearchResults(
     !Array.isArray(body.results) ||
     body.results.length > SEARCH_PAGE_SIZE ||
     !body.results.every(isSearchResult) ||
-    typeof body.hasMore !== "boolean"
+    typeof body.hasMore !== "boolean" ||
+    (body.hasMore && body.results.length !== SEARCH_PAGE_SIZE)
   ) {
     throw new Error("Could not read search results. Please try again.");
   }

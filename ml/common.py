@@ -112,14 +112,26 @@ def load_model(
 
 def get_embedding_tensor(
     output,
+    expected_count: int,
 ) -> torch.Tensor:
     if isinstance(output, torch.Tensor):
-        return output
+        embeddings = output
+    elif hasattr(output, "pooler_output"):
+        embeddings = output.pooler_output
+    else:
+        raise TypeError(f"Unexpected model output type: {type(output)}")
 
-    if hasattr(output, "pooler_output"):
-        return output.pooler_output
+    if not isinstance(embeddings, torch.Tensor):
+        raise TypeError("Model output did not contain an embedding tensor")
 
-    raise TypeError(f"Unexpected model output type: {type(output)}")
+    # Check before pairing vectors with metadata, so no items are silently lost.
+    if embeddings.ndim != 2 or embeddings.shape[0] != expected_count:
+        raise ValueError(
+            f"Expected {expected_count} embedding rows in a 2D tensor, "
+            f"got shape {tuple(embeddings.shape)}"
+        )
+
+    return embeddings
 
 
 def get_model_device(
@@ -149,6 +161,7 @@ def embed_images(
 
     embeddings = get_embedding_tensor(
         output,
+        expected_count=len(images),
     )
 
     embeddings = torch.nn.functional.normalize(
@@ -195,6 +208,7 @@ def embed_texts(
 
     embeddings = get_embedding_tensor(
         output,
+        expected_count=len(texts),
     )
 
     embeddings = torch.nn.functional.normalize(
