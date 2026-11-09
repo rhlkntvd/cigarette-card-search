@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { SubmitEvent } from "react";
 
 import type { SearchResult } from "../search";
+import { MAX_QUERY_LENGTH, QUERY_TOO_LONG_MESSAGE } from "../query";
 import { fetchSearchResults } from "./search-client";
 import CardImage from "./card-image";
 import CardDetail from "./card-detail";
@@ -41,6 +42,11 @@ export default function CardSearch() {
 
     if (!normalizedQuery) {
       setSearch({ status: "error", message: "Enter a description to search." });
+      return;
+    }
+
+    if (normalizedQuery.length > MAX_QUERY_LENGTH) {
+      setSearch({ status: "error", message: QUERY_TOO_LONG_MESSAGE });
       return;
     }
 
@@ -121,7 +127,11 @@ export default function CardSearch() {
             placeholder="a colorful sunset"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            aria-describedby="search-help"
+            aria-describedby={
+              search.status === "error"
+                ? "search-help search-error"
+                : "search-help"
+            }
             aria-invalid={search.status === "error" && !query.trim()}
             required
           />
@@ -144,7 +154,7 @@ export default function CardSearch() {
       </p>
 
       {search.status === "error" && (
-        <p className="search-error" role="alert">
+        <p id="search-error" className="search-error" role="alert">
           {search.message}
         </p>
       )}

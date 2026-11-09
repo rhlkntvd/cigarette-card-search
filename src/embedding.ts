@@ -1,4 +1,5 @@
 import { EMBEDDING_DIMENSIONS, isEmbedding } from "./vector";
+import { MAX_QUERY_LENGTH, QueryTooLongError } from "./query";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -37,6 +38,10 @@ export async function embedText(text: string): Promise<number[]> {
     throw new Error("Search text must not be empty");
   }
 
+  if (normalizedText.length > MAX_QUERY_LENGTH) {
+    throw new QueryTooLongError();
+  }
+
   const url = `${getEmbeddingServiceUrl()}/embed`;
   const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
@@ -67,6 +72,28 @@ export async function embedText(text: string): Promise<number[]> {
   }
 
   if (!response.ok) {
+    let body: unknown;
+
+    if (response.status === 400) {
+      try {
+        body = JSON.parse(responseText);
+      } catch {
+        // Unrecognized service errors stay server errors.
+      }
+    }
+
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "detail" in body &&
+      typeof body.detail === "object" &&
+      body.detail !== null &&
+      "code" in body.detail &&
+      body.detail.code === "text_too_long"
+    ) {
+      throw new QueryTooLongError();
+    }
+
     throw new Error(
       `Embedding service returned ${response.status}: ${responseText}`,
     );

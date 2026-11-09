@@ -9,9 +9,14 @@ from transformers.utils import logging as hf_logging
 from urllib3.util.retry import Retry
 
 MODEL_NAME = "google/siglip2-base-patch16-224"
+TEXT_MAX_TOKENS = 64
 
 hf_logging.set_verbosity_error()
 hf_logging.disable_progress_bar()
+
+
+class TextTooLongError(ValueError):
+    """Text exceeds the encoder's token limit."""
 
 
 def get_device() -> torch.device:
@@ -193,9 +198,16 @@ def embed_texts(
     inputs = processor(
         text=texts,
         padding="max_length",
-        max_length=64,
-        return_tensors="pt",
+        max_length=TEXT_MAX_TOKENS,
+        truncation=False,
+        return_tensors=None,
     )
+
+    # Check untruncated IDs before tensor conversion, including mixed-length batches.
+    if any(len(ids) > TEXT_MAX_TOKENS for ids in inputs["input_ids"]):
+        raise TextTooLongError(f"Text exceeds {TEXT_MAX_TOKENS} tokens")
+
+    inputs = inputs.convert_to_tensors("pt")
 
     device = get_model_device(model)
 

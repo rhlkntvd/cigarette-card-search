@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 
 import { embedText } from "../src/embedding.js";
+import { MAX_QUERY_LENGTH, QueryTooLongError } from "../src/query.js";
 
 const originalServiceUrl = process.env.EMBEDDING_SERVICE_URL;
 
@@ -61,6 +62,73 @@ test("rejects missing configuration before making a request", async (t) => {
     /EMBEDDING_SERVICE_URL is not set/,
   );
   assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("rejects oversized text before making a request", async (t) => {
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Unexpected HTTP request");
+  });
+
+  await assert.rejects(
+    embedText("a".repeat(MAX_QUERY_LENGTH + 1)),
+    QueryTooLongError,
+  );
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("trims whitespace before checking the character limit", async (t) => {
+  const text = "a".repeat(MAX_QUERY_LENGTH);
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: Parameters<typeof fetch>[0], options?: RequestInit) => {
+      assert.equal(options?.body, JSON.stringify({ text }));
+      return Response.json({ dimensions: 768, embedding: Array(768).fill(1) });
+    },
+  );
+
+  assert.equal((await embedText(` ${text} `)).length, 768);
+});
+
+test("recognizes the service's token-limit error without exposing its message", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json(
+      { detail: { code: "text_too_long", message: "private service details" } },
+      { status: 400 },
+    ),
+  );
+
+  await assert.rejects(embedText("butterfly ".repeat(30)), QueryTooLongError);
+});
+
+test("keeps unrelated or malformed service errors as server failures", async (t) => {
+  let response = new Response();
+  t.mock.method(globalThis, "fetch", async () => response);
+
+  for (const body of [
+    "not JSON",
+    "null",
+    '{"detail":"text_too_long"}',
+    '{"detail":{"code":"another_error"}}',
+  ]) {
+    response = new Response(body, { status: 400 });
+    await assert.rejects(embedText("butterfly"), (error: unknown) => {
+      assert.ok(
+        error instanceof Error && !(error instanceof QueryTooLongError),
+      );
+      assert.match(error.message, /Embedding service returned 400/);
+      return true;
+    });
+  }
+
+  response = Response.json(
+    { detail: { code: "text_too_long" } },
+    { status: 500 },
+  );
+  await assert.rejects(
+    embedText("butterfly"),
+    /Embedding service returned 500/,
+  );
 });
 
 test("adds context to transport failures and preserves their cause", async (t) => {

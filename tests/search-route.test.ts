@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 
 import { POST } from "../src/app/api/search/route.js";
+import { MAX_QUERY_LENGTH, QUERY_TOO_LONG_MESSAGE } from "../src/query.js";
 
 const environmentKeys = [
   "SEARCH_SCOPE",
@@ -177,6 +178,32 @@ test("invalid server scope fails before making an embedding request", async (t) 
   });
   assert.equal(fetchMock.mock.callCount(), 0);
   assert.equal(errorMock.mock.callCount(), 1);
+});
+
+test("rejects oversized descriptions before requesting an embedding", async (t) => {
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Unexpected embedding request");
+  });
+  const response = await POST(
+    request({ query: "a".repeat(MAX_QUERY_LENGTH + 1) }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: QUERY_TOO_LONG_MESSAGE });
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("returns token-limit failures as actionable client errors", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ detail: { code: "text_too_long" } }, { status: 400 }),
+  );
+  const errorMock = t.mock.method(console, "error", () => {});
+
+  const response = await POST(request({ query: "butterfly ".repeat(30) }));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: QUERY_TOO_LONG_MESSAGE });
+  assert.equal(errorMock.mock.callCount(), 0);
 });
 
 test("trims the query and keeps embedding failures in server logs", async (t) => {

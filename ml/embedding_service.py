@@ -11,10 +11,23 @@ from pydantic import BaseModel
 
 from ml.common import (
     MODEL_NAME,
+    TextTooLongError,
     embed_texts,
     get_device,
     load_model,
 )
+
+MAX_TEXT_LENGTH = 500
+
+
+def text_too_long() -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "code": "text_too_long",
+            "message": "Description is too long. Try a shorter phrase.",
+        },
+    )
 
 
 class EmbedRequest(BaseModel):
@@ -78,11 +91,17 @@ def embed(
             detail="Text must not be empty.",
         )
 
-    embedding = embed_texts(
-        [text],
-        request.app.state.processor,
-        request.app.state.model,
-    )[0]
+    if len(text) > MAX_TEXT_LENGTH:
+        raise text_too_long()
+
+    try:
+        embedding = embed_texts(
+            [text],
+            request.app.state.processor,
+            request.app.state.model,
+        )[0]
+    except TextTooLongError as error:
+        raise text_too_long() from error
 
     values = embedding.tolist()
 

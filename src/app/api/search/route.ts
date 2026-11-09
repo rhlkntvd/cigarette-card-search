@@ -1,5 +1,10 @@
 import { embedText } from "../../../embedding";
 import { searchCards } from "../../../search";
+import {
+  MAX_QUERY_LENGTH,
+  QUERY_TOO_LONG_MESSAGE,
+  QueryTooLongError,
+} from "../../../query";
 import { getSearchScope } from "../../search-scope";
 import { SEARCH_PAGE_SIZE } from "../../search-page";
 
@@ -56,6 +61,10 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  if (query.length > MAX_QUERY_LENGTH) {
+    return Response.json({ error: QUERY_TOO_LONG_MESSAGE }, { status: 400 });
+  }
+
   const offset = "offset" in body ? body.offset : 0;
 
   if (
@@ -83,6 +92,10 @@ export async function POST(request: Request): Promise<Response> {
       hasMore: rows.length > SEARCH_PAGE_SIZE,
     });
   } catch (error: unknown) {
+    if (error instanceof QueryTooLongError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+
     console.error("Card search failed:", error);
 
     return Response.json(
