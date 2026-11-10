@@ -5,6 +5,7 @@ Run from the repository root:
 """
 
 import argparse
+import hashlib
 import json
 import re
 import threading
@@ -18,6 +19,8 @@ from time import perf_counter
 import torch
 
 from ml.common import (
+    MODEL_NAME,
+    MODEL_REVISION,
     create_http_session,
     embed_images,
     fetch_image,
@@ -47,6 +50,50 @@ DEFAULT_DOWNLOAD_WORKERS = 4
 SHARD_PATTERN = re.compile(r"^shard-(\d+)-(\d+)\.pt$")
 
 THREAD_LOCAL = threading.local()
+
+
+def check_checkpoint_dataset(cards: list[dict]) -> None:
+    digest = hashlib.sha256()
+
+    # Include order and metadata: checkpoints are positional, and rights can change.
+    for card in cards:
+        row = json.dumps(card, sort_keys=True, separators=(",", ":"))
+        digest.update((row + "\n").encode("utf-8"))
+
+    expected = {
+        # Increment when image preprocessing changes.
+        "version": 1,
+        "dataset_sha256": digest.hexdigest(),
+        "card_count": len(cards),
+        "model": MODEL_NAME,
+        "model_revision": MODEL_REVISION,
+    }
+    fingerprint_path = SHARD_DIR / "dataset.json"
+    recovery = "Archive data/embeddings and start with fresh checkpoints."
+
+    if fingerprint_path.exists():
+        try:
+            saved = json.loads(fingerprint_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise RuntimeError(
+                f"Cannot read checkpoint fingerprint at {fingerprint_path}. {recovery}"
+            ) from error
+
+        if saved != expected:
+            raise RuntimeError(
+                f"Checkpoint dataset or model differs from this run. {recovery}"
+            )
+        return
+
+    if SHARD_DIR.exists() and any(SHARD_DIR.iterdir()):
+        raise RuntimeError(
+            f"Existing checkpoints have no dataset fingerprint. {recovery}"
+        )
+
+    SHARD_DIR.mkdir(parents=True, exist_ok=True)
+    temporary = fingerprint_path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(fingerprint_path)
 
 
 def parse_args():
@@ -590,10 +637,10 @@ def main():
 
     print(f"Loaded {len(cards)} cards")
 
-    SHARD_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    if not cards:
+        raise RuntimeError(f"No cards found in {CARDS_PATH}")
+
+    check_checkpoint_dataset(cards)
 
     resume_index = get_resume_index()
 

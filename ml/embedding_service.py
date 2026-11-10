@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from ml.common import (
     MODEL_NAME,
+    MODEL_REVISION,
     TextTooLongError,
     embed_texts,
     get_device,
@@ -71,6 +72,7 @@ def health(request: Request):
     return {
         "status": "ok",
         "model": MODEL_NAME,
+        "revision": MODEL_REVISION,
         "device": str(request.app.state.device),
     }
 

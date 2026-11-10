@@ -9,6 +9,7 @@ from transformers.utils import logging as hf_logging
 from urllib3.util.retry import Retry
 
 MODEL_NAME = "google/siglip2-base-patch16-224"
+MODEL_REVISION = "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2"
 TEXT_MAX_TOKENS = 64
 
 hf_logging.set_verbosity_error()
@@ -101,10 +102,12 @@ def load_model(
 ):
     processor = AutoProcessor.from_pretrained(
         MODEL_NAME,
+        revision=MODEL_REVISION,
     )
 
     model = AutoModel.from_pretrained(
         MODEL_NAME,
+        revision=MODEL_REVISION,
     )
 
     model.eval()
