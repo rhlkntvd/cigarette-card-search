@@ -11,6 +11,7 @@
     "inspect:cards": "node --import tsx scripts/inspect-cards.ts",
     "normalize:cards": "node --import tsx scripts/normalize-cards.ts",
     "verify:cards": "node --import tsx scripts/verify-cards.ts",
+    "compare:cards": "node --import tsx scripts/compare-cards.ts",
     "search:cards": "node --env-file=.env --import tsx scripts/search-cards.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "next typegen && tsc --noEmit"

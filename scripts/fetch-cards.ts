@@ -9,6 +9,9 @@ const PROVIDER_NAME = "The New York Public Library";
 const PAGE_SIZE = 500;
 const MAX_PAGE = 100;
 const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_ATTEMPTS = 3;
+const MAX_RETRY_DELAY_MS = 30_000;
+const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const OUTPUT_PATH = path.resolve("data/raw/cigarette-cards.jsonl");
 
@@ -27,6 +30,43 @@ function getApiKey(): string {
   }
 
   return apiKey;
+}
+
+async function retryPage(
+  page: number,
+  attempt: number,
+  error: Error,
+  retryAfter: string | null = null,
+) {
+  if (attempt >= MAX_ATTEMPTS) {
+    throw error;
+  }
+
+  let delayMs = 1_000 * 2 ** (attempt - 1);
+
+  if (retryAfter?.trim()) {
+    const value = retryAfter.trim();
+    const requestedDelay = /^\d+$/.test(value)
+      ? Number(value) * 1_000
+      : Date.parse(value) - Date.now();
+
+    if (Number.isFinite(requestedDelay)) {
+      delayMs = Math.max(delayMs, requestedDelay);
+    }
+  }
+
+  if (delayMs > MAX_RETRY_DELAY_MS) {
+    throw new Error(
+      `${error.message}; Retry-After exceeds ${MAX_RETRY_DELAY_MS} ms, try again later`,
+      { cause: error },
+    );
+  }
+
+  console.warn(
+    `Retrying page ${page} in ${delayMs} ms ` +
+      `(attempt ${attempt + 1}/${MAX_ATTEMPTS}): ${error.message}`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 async function fetchPage(apiKey: string, page: number): Promise<DplaResponse> {
@@ -48,28 +88,34 @@ async function fetchPage(apiKey: string, page: number): Promise<DplaResponse> {
 
   console.log(`Fetching page ${page}...`);
 
-  const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  let response: Response;
   let responseText: string;
 
-  try {
-    response = await fetch(url, { signal });
-    responseText = await response.text();
-  } catch (error: unknown) {
-    if (signal.aborted) {
-      throw new Error(
-        `DPLA request for page ${page} timed out after ${REQUEST_TIMEOUT_MS} ms`,
-        { cause: error },
-      );
+  for (let attempt = 1; ; attempt += 1) {
+    const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    let response: Response;
+
+    try {
+      response = await fetch(url, { signal });
+      responseText = await response.text();
+    } catch (error: unknown) {
+      const message = signal.aborted
+        ? `DPLA request for page ${page} timed out after ${REQUEST_TIMEOUT_MS} ms`
+        : `DPLA request for page ${page} failed`;
+      await retryPage(page, attempt, new Error(message, { cause: error }));
+      continue;
     }
 
-    throw new Error(`DPLA request for page ${page} failed`, { cause: error });
-  }
+    if (response.ok) {
+      break;
+    }
 
-  if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       `DPLA request for page ${page} returned ${response.status}: ${response.statusText}`,
     );
+    if (!RETRY_STATUSES.has(response.status)) {
+      throw error;
+    }
+    await retryPage(page, attempt, error, response.headers.get("Retry-After"));
   }
 
   let data: unknown;

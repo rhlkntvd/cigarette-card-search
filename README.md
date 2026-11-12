@@ -51,6 +51,8 @@ python -m ml.import_pgvector
 
 Archive raw and processed files and the entire `data/embeddings/` directory outside the repository before refreshing. Compare the new normalized records with the previous snapshot: identical records can reuse matching embeddings; changed records need fresh checkpoints. Import requires an empty `cards` table.
 
+Compare verified normalized snapshots with `npm run compare:cards -- <previous.jsonl> <current.jsonl>`.
+
 ## Run
 
 Terminal 1 (Embedding Service):

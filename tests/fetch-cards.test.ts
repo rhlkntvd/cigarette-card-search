@@ -16,6 +16,13 @@ type Scenario =
   | "success"
   | "transport"
   | "http"
+  | "nonretry-http"
+  | "retry-transport"
+  | "retry-http"
+  | "retry-third-attempt"
+  | "retry-rate-limit"
+  | "retry-date"
+  | "long-retry-after"
   | "invalid-json"
   | "invalid-response"
   | "invalid-count"
@@ -41,6 +48,17 @@ import assert from "node:assert/strict";
 
 const scenario = ${JSON.stringify(scenario)};
 let controller;
+const attempts = {};
+const delays = [];
+const originalSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (callback, milliseconds, ...args) => {
+  delays.push(milliseconds);
+  return originalSetTimeout(callback, 0, ...args);
+};
+Date.now = () => Date.parse("2026-11-11T00:00:00Z");
+process.on("exit", () => {
+  console.log("TEST_METRICS " + JSON.stringify({ attempts, delays }));
+});
 
 AbortSignal.timeout = (milliseconds) => {
   assert.equal(milliseconds, 30_000);
@@ -61,12 +79,37 @@ globalThis.fetch = async (input, options) => {
   assert.equal(options.signal, controller.signal);
 
   const page = Number(url.searchParams.get("page"));
+  attempts[page] = (attempts[page] ?? 0) + 1;
+  const attempt = attempts[page];
 
-  if (scenario === "transport" || (scenario === "second-page-failure" && page === 2)) {
+  if (scenario === "transport" || (scenario === "second-page-failure" && page === 2) ||
+      (scenario === "retry-transport" && page === 2 && attempt === 1)) {
     throw new TypeError("Network unavailable");
   }
   if (scenario === "http") {
     return new Response("Unavailable", { status: 503, statusText: "Service Unavailable" });
+  }
+  if (scenario === "nonretry-http") {
+    return new Response("Unauthorized", { status: 401, statusText: "Unauthorized" });
+  }
+  if (scenario === "long-retry-after") {
+    return new Response("Too many requests", { status: 429, headers: { "Retry-After": "120" } });
+  }
+  if (scenario === "retry-third-attempt" && page === 2 && attempt <= 2) {
+    return new Response("Unavailable", { status: 503 });
+  }
+  if (page === 2 && attempt === 1) {
+    if (scenario === "retry-http") {
+      return new Response("Unavailable", { status: 503 });
+    }
+    if (scenario === "retry-rate-limit") {
+      return new Response("Too many requests", { status: 429, headers: { "Retry-After": "2" } });
+    }
+    if (scenario === "retry-date") {
+      return new Response("Unavailable", { status: 503, headers: {
+        "Retry-After": new Date(Date.now() + 5000).toUTCString(),
+      } });
+    }
   }
   if (scenario === "invalid-json") {
     return new Response("not JSON");
@@ -122,7 +165,15 @@ globalThis.fetch = async (input, options) => {
     );
 
     assert.ifError(result.error);
-    return { ...result, dataset: await readFile(outputPath, "utf8") };
+    const metricsLine = result.stdout
+      .split("\n")
+      .find((line) => line.startsWith("TEST_METRICS "));
+    assert.ok(metricsLine, result.stdout + result.stderr);
+    const metrics = JSON.parse(metricsLine.slice("TEST_METRICS ".length)) as {
+      attempts: Record<string, number>;
+      delays: number[];
+    };
+    return { ...result, metrics, dataset: await readFile(outputPath, "utf8") };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -149,6 +200,14 @@ test("reports page-specific failures and preserves the published dataset", async
     {
       scenario: "http",
       message: /DPLA request for page 1 returned 503: Service Unavailable/,
+    },
+    {
+      scenario: "nonretry-http",
+      message: /DPLA request for page 1 returned 401: Unauthorized/,
+    },
+    {
+      scenario: "long-retry-after",
+      message: /Retry-After exceeds 30000 ms/,
     },
     {
       scenario: "invalid-json",
@@ -188,6 +247,14 @@ test("reports page-specific failures and preserves the published dataset", async
       assert.match(result.stderr, message);
       assert.doesNotMatch(result.stderr, new RegExp(testApiKey));
       assert.equal(result.dataset, previousDataset);
+      const retryable = [
+        "transport",
+        "http",
+        "request-timeout",
+        "body-timeout",
+      ].includes(scenario);
+      assert.equal(result.metrics.attempts["1"], retryable ? 3 : 1);
+      assert.deepEqual(result.metrics.delays, retryable ? [1000, 2000] : []);
     });
   }
 });
@@ -199,4 +266,35 @@ test("preserves the published dataset if a later page fails", async () => {
   assert.match(result.stdout, /Retrieved 500 of 501 records/);
   assert.match(result.stderr, /DPLA request for page 2 failed/);
   assert.equal(result.dataset, previousDataset);
+  assert.deepEqual(result.metrics.attempts, { "1": 1, "2": 3 });
+  assert.deepEqual(result.metrics.delays, [1000, 2000]);
+});
+
+test("retries only the failed page and publishes each record once", async (t) => {
+  const cases: { scenario: Scenario; delays: number[] }[] = [
+    { scenario: "retry-transport", delays: [1000] },
+    { scenario: "retry-http", delays: [1000] },
+    { scenario: "retry-third-attempt", delays: [1000, 2000] },
+    { scenario: "retry-rate-limit", delays: [2000] },
+    { scenario: "retry-date", delays: [5000] },
+  ];
+  for (const { scenario, delays } of cases) {
+    await t.test(scenario, async () => {
+      const result = await fetchDataset(scenario);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.deepEqual(result.metrics.attempts, {
+        "1": 1,
+        "2": delays.length + 1,
+      });
+      assert.deepEqual(result.metrics.delays, delays);
+      const ids = result.dataset
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line).id);
+      assert.equal(ids.length, 501);
+      assert.equal(new Set(ids).size, 501);
+      assert.equal(ids[500], "card-500");
+      assert.doesNotMatch(result.stderr, new RegExp(testApiKey));
+    });
+  }
 });
