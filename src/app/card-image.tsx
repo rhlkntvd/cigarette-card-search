@@ -1,12 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
-import { getIiifUrl } from "../iiif";
-import { FALLBACK_IMAGE_SIZE, failImageRequest } from "./card-image-state";
-import type { CardImageState } from "./card-image-state";
+import {
+  EMPTY_IMAGE,
+  THUMBNAIL_SIZE,
+  getCardImage,
+  retryCardImage,
+  reportCardImageError,
+  subscribeCardImage,
+} from "./card-image-store";
 
-const IMAGE_LOAD_TIMEOUT_MS = 20_000;
+function useCardImage(imageId: string, size: number, enabled = true) {
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      enabled ? subscribeCardImage(imageId, size, listener) : () => {},
+    [imageId, size, enabled],
+  );
+  const getSnapshot = useCallback(
+    () => (enabled ? getCardImage(imageId, size) : EMPTY_IMAGE),
+    [imageId, size, enabled],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_IMAGE);
+}
 
 interface CardImageProps {
   imageId: string;
@@ -17,80 +33,56 @@ interface CardImageProps {
 export default function CardImage({
   imageId,
   title,
-  size = FALLBACK_IMAGE_SIZE,
+  size = THUMBNAIL_SIZE,
 }: CardImageProps) {
-  const [image, setImage] = useState<CardImageState>({
-    status: "loading",
+  const thumbnail = useCardImage(imageId, THUMBNAIL_SIZE);
+  const larger = useCardImage(
+    imageId,
     size,
-    attempt: 0,
-  });
-  const { status, size: requestedSize, attempt } = image;
-  const imageUrl = getIiifUrl(imageId, requestedSize);
-
-  // Give retries a fresh URL instead of reusing a stalled request.
-  const source = attempt === 0 ? imageUrl : `${imageUrl}?retry=${attempt}`;
-
-  useEffect(() => {
-    if (status !== "loading") {
-      return;
-    }
-
-    // NYPL can stall without firing an image error.
-    const timeout = setTimeout(() => {
-      setImage((current) => failImageRequest(current, requestedSize, attempt));
-    }, IMAGE_LOAD_TIMEOUT_MS);
-
-    return () => clearTimeout(timeout);
-  }, [status, requestedSize, attempt]);
+    size > THUMBNAIL_SIZE && thumbnail.image !== null,
+  );
+  const image = larger.image ?? thumbnail.image;
+  const canRetry = thumbnail.status === "slow" || thumbnail.status === "error";
 
   return (
     <div className="card-image">
-      {status === "error" ? (
-        <div className="image-message" role="status">
-          <span>Image unavailable</span>
-          <button
-            type="button"
-            className="image-retry"
-            aria-label={`Retry image for ${title}`}
-            onClick={() => {
-              setImage((current) => ({
-                ...current,
-                status: "loading",
-                attempt: current.attempt + 1,
-              }));
-            }}
-          >
-            Retry image
-          </button>
-        </div>
+      {image ? (
+        <img
+          key={image.src}
+          src={image.src}
+          alt={title}
+          width={image.width}
+          height={image.height}
+          loading="eager"
+          decoding="async"
+          onError={() =>
+            reportCardImageError(
+              imageId,
+              larger.image ? size : THUMBNAIL_SIZE,
+              image.src,
+            )
+          }
+        />
       ) : (
-        <>
-          {status === "loading" && (
-            <span className="image-message">Loading image…</span>
+        <div className="image-message" role="status">
+          <span>
+            {thumbnail.status === "error"
+              ? "Image unavailable"
+              : thumbnail.status === "slow"
+                ? "Still loading…"
+                : "Loading image…"}
+          </span>
+          {canRetry && (
+            <button
+              type="button"
+              className="image-retry"
+              aria-label={`Retry image for ${title}`}
+              onClick={() => retryCardImage(imageId, THUMBNAIL_SIZE)}
+            >
+              Retry image
+            </button>
           )}
-          <img
-            key={`${requestedSize}-${attempt}`}
-            className={status === "loading" ? "image-loading" : undefined}
-            src={source}
-            alt={title}
-            width={requestedSize}
-            height={requestedSize}
-            loading="eager"
-            decoding="async"
-            onLoad={() =>
-              setImage((current) =>
-                current.size === requestedSize && current.attempt === attempt
-                  ? { ...current, status: "loaded" }
-                  : current,
-              )
-            }
-            onError={() =>
-              setImage((current) =>
-                failImageRequest(current, requestedSize, attempt),
-              )
-            }
-          />
-        </>
+        </div>
       )}
     </div>
   );

@@ -263,10 +263,6 @@ h2 {
   object-fit: contain;
 }
 
-.card-image img.image-loading {
-  visibility: hidden;
-}
-
 .image-message {
   position: absolute;
   inset: 0;
