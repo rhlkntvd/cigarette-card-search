@@ -9,26 +9,27 @@ import { fetchSearchResults } from "./search-client";
 import CardImage from "./card-image";
 import CardDetail from "./card-detail";
 import { SEARCH_PAGE_SIZE } from "./search-page";
+import type { SearchPage } from "./search-page";
+
+interface SearchResults extends SearchPage {
+  query: string;
+  loadingMore: boolean;
+  moreError: string | null;
+}
 
 type SearchState =
   | { status: "idle" }
   | { status: "loading"; query: string }
-  | {
-      status: "success";
-      query: string;
-      results: SearchResult[];
-      hasMore: boolean;
-      loadingMore: boolean;
-      moreError: string | null;
-    }
   | { status: "error"; message: string };
 
 export default function CardSearch() {
   const [query, setQuery] = useState("");
   const [selectedCard, setSelectedCard] = useState<SearchResult | null>(null);
+  // Keep the last successful page visible while a replacement is requested.
+  const [results, setResults] = useState<SearchResults | null>(null);
   const [search, setSearch] = useState<SearchState>({ status: "idle" });
   const isLoading = search.status === "loading";
-  const isLoadingMore = search.status === "success" && search.loadingMore;
+  const isLoadingMore = results?.loadingMore ?? false;
   const isBusy = isLoading || isLoadingMore;
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -55,13 +56,13 @@ export default function CardSearch() {
 
     try {
       const page = await fetchSearchResults(normalizedQuery);
-      setSearch({
-        status: "success",
+      setResults({
         query: normalizedQuery,
         ...page,
         loadingMore: false,
         moreError: null,
       });
+      setSearch({ status: "idle" });
     } catch (error: unknown) {
       setSearch({
         status: "error",
@@ -74,19 +75,19 @@ export default function CardSearch() {
   }
 
   async function handleShowMore() {
-    if (search.status !== "success" || !search.hasMore || search.loadingMore) {
+    if (!results || !results.hasMore || isBusy) {
       return;
     }
 
-    setSearch({ ...search, loadingMore: true, moreError: null });
+    setResults({ ...results, loadingMore: true, moreError: null });
 
     try {
       const page = await fetchSearchResults(
-        search.query,
-        search.results.length,
+        results.query,
+        results.results.length,
       );
-      setSearch((current) => {
-        if (current.status !== "success" || current.query !== search.query) {
+      setResults((current) => {
+        if (!current || current.query !== results.query) {
           return current;
         }
 
@@ -98,8 +99,8 @@ export default function CardSearch() {
         };
       });
     } catch (error: unknown) {
-      setSearch((current) => {
-        if (current.status !== "success" || current.query !== search.query) {
+      setResults((current) => {
+        if (!current || current.query !== results.query) {
           return current;
         }
 
@@ -117,13 +118,14 @@ export default function CardSearch() {
 
   return (
     <>
-      <form className="search-form" onSubmit={handleSubmit}>
+      <form className="search-form" role="search" onSubmit={handleSubmit}>
         <label htmlFor="search-query">Describe an image</label>
         <div className="search-input-row">
           <input
             id="search-query"
             name="query"
             type="search"
+            enterKeyHint="search"
             placeholder="a colorful sunset"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -132,7 +134,10 @@ export default function CardSearch() {
                 ? "search-help search-error"
                 : "search-help"
             }
-            aria-invalid={search.status === "error" && !query.trim()}
+            aria-invalid={
+              search.status === "error" &&
+              (!query.trim() || query.trim().length > MAX_QUERY_LENGTH)
+            }
             required
           />
           <button type="submit" disabled={isBusy}>
@@ -144,14 +149,24 @@ export default function CardSearch() {
         </p>
       </form>
 
-      <p className="search-status" role="status" aria-atomic="true">
-        {search.status === "loading" && `Searching for “${search.query}”…`}
-        {search.status === "success" &&
-          (search.results.length === 0
-            ? `No cards found for “${search.query}”. Try a different description.`
-            : `${search.results.length} result${search.results.length === 1 ? "" : "s"} for “${search.query}”.`)}
-        {isLoadingMore && " Loading more…"}
-      </p>
+      <div className="results-header">
+        {(results !== null || search.status !== "idle") && (
+          <h2 id="results-title">Search results</h2>
+        )}
+        <p className="search-status" role="status" aria-atomic="true">
+          {results &&
+            (results.results.length > 0
+              ? `${results.results.length} result${results.results.length === 1 ? "" : "s"} for “${results.query}”.`
+              : !isLoading &&
+                `No cards found for “${results.query}”. Try a different description.`)}
+          {search.status === "loading" && (
+            <span className="pending-search">
+              {`Searching for “${search.query}”…`}
+            </span>
+          )}
+          {isLoadingMore && " Loading more…"}
+        </p>
+      </div>
 
       {search.status === "error" && (
         <p id="search-error" className="search-error" role="alert">
@@ -159,11 +174,10 @@ export default function CardSearch() {
         </p>
       )}
 
-      {search.status === "success" && search.results.length > 0 && (
-        <section aria-labelledby="results-title">
-          <h2 id="results-title">Search results</h2>
+      {results && results.results.length > 0 && (
+        <section aria-labelledby="results-title" aria-busy={isBusy}>
           <ol className="results-grid" role="list">
-            {search.results.map((card) => (
+            {results.results.map((card) => (
               <li key={card.dplaId}>
                 <article className="result-card">
                   <CardImage imageId={card.frontImageId} title={card.title} />
@@ -201,19 +215,19 @@ export default function CardSearch() {
             ))}
           </ol>
           <div className="pagination-controls">
-            {search.moreError && (
+            {results.moreError && (
               <p className="pagination-error" role="alert">
-                {search.moreError}
+                {results.moreError}
               </p>
             )}
-            {search.hasMore ? (
+            {results.hasMore ? (
               <button
                 type="button"
                 className="show-more"
-                disabled={search.loadingMore}
+                disabled={isBusy}
                 onClick={handleShowMore}
               >
-                {search.loadingMore
+                {results.loadingMore
                   ? "Loading…"
                   : `Show ${SEARCH_PAGE_SIZE} more`}
               </button>

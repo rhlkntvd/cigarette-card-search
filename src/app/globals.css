@@ -40,7 +40,7 @@ body {
 main {
   width: min(calc(100% - 2rem), 64rem);
   margin-inline: auto;
-  padding-top: 1.75rem;
+  padding-top: 1.5rem;
 }
 
 .site-header {
@@ -65,16 +65,8 @@ h1 {
 
 .introduction {
   max-width: 38rem;
-  margin: 0.6rem auto 1.5rem;
+  margin: 0.6rem auto 1.25rem;
   color: var(--muted);
-}
-
-.introduction::after {
-  content: "";
-  display: block;
-  width: 3rem;
-  margin: 1.25rem auto 0;
-  border-top: 1px solid var(--border-strong);
 }
 
 button,
@@ -150,7 +142,7 @@ a:hover {
   margin-inline: auto;
   border: 1px solid var(--border);
   border-radius: 0.25rem;
-  padding: 1.25rem;
+  padding: 1rem;
   background: var(--surface);
 }
 
@@ -185,6 +177,7 @@ a:hover {
 }
 
 .search-input-row button {
+  min-width: 8.25rem;
   padding-inline: 1.25rem;
 }
 
@@ -202,16 +195,37 @@ a:hover {
 
 .search-status,
 .search-error {
-  width: min(100%, 48rem);
-  margin: 1.25rem auto;
   overflow-wrap: anywhere;
 }
 
+.results-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 1.25rem 0 1rem;
+}
+
+.results-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
 .search-status {
+  min-width: 0;
+  max-width: 48rem;
   min-height: 1.4em;
+  margin: 0;
+}
+
+.pending-search {
+  display: block;
+  color: var(--text-secondary);
 }
 
 .search-error {
+  margin: 1rem 0;
   color: var(--error);
 }
 
@@ -232,6 +246,8 @@ h2 {
 }
 
 .result-card {
+  display: flex;
+  flex-direction: column;
   position: relative;
   height: 100%;
   border: 1px solid var(--border);
@@ -244,6 +260,7 @@ h2 {
 }
 
 .card-image {
+  flex-shrink: 0;
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
@@ -281,11 +298,15 @@ h2 {
 }
 
 .card-details {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
   padding: 1rem;
 }
 
 .card-details h3 {
-  margin: 0 0 0.85rem;
+  margin: 0;
   font-size: 1rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -332,11 +353,17 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  margin-top: auto;
 }
 
 .card-source {
   position: relative;
   z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
 }
 
 .pagination-controls {
@@ -397,51 +424,54 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-bottom: 0.5rem;
+  padding-bottom: 1rem;
   background: var(--surface);
 }
 
-.dialog-header .eyebrow {
-  margin: 0;
-}
-
-.detail-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-  margin: 0.5rem 0 1.25rem;
-}
-
-.detail-title-row h2 {
+.dialog-header h2 {
   min-width: 0;
   margin: 0;
-  font-size: clamp(1.4rem, 3vw, 2rem);
+  font-size: clamp(1.1rem, 3vw, 1.6rem);
   overflow-wrap: anywhere;
 }
 
-.detail-title-row .primary-link {
+.dialog-header button {
   flex-shrink: 0;
 }
 
-.detail-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem);
-  align-items: start;
-  gap: 2rem;
-}
-
 .card-dialog .card-image {
-  width: 100%;
-  max-height: 62dvh;
+  display: grid;
+  place-items: center;
+  aspect-ratio: auto;
+  min-height: min(16rem, 50dvh);
   border: 1px solid var(--border);
   border-radius: 0.2rem;
+}
+
+.card-dialog .card-image:has(img) {
+  min-height: 0;
+}
+
+.card-dialog .card-image img {
+  position: static;
+  width: 100%;
+  height: auto;
+  max-height: 64dvh;
+  padding: 0.75rem;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
 }
 
 .image-controls {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.75rem;
 }
 
 .image-controls button[aria-pressed="true"] {
@@ -451,33 +481,6 @@ h2 {
 
 .detail-note {
   margin: 0.75rem 0 0;
-}
-
-.detail-information {
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.detail-information dl {
-  margin: 0;
-}
-
-.detail-information dl > div + div {
-  margin-top: 0.8rem;
-  border-top: 1px solid var(--border);
-  padding-top: 0.8rem;
-}
-
-.detail-information dt {
-  margin-bottom: 0.2rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.detail-information dd {
-  margin: 0;
-  color: var(--text-secondary);
-  overflow-wrap: anywhere;
 }
 
 .primary-link {
@@ -499,23 +502,6 @@ h2 {
   white-space: nowrap;
 }
 
-@media (max-width: 48rem) {
-  .detail-title-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
-  }
-
-  .detail-title-row .primary-link {
-    justify-content: center;
-  }
-
-  .detail-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1.5rem;
-  }
-}
-
 @media (max-width: 36rem) {
   html {
     font-size: 16px;
@@ -531,13 +517,24 @@ h2 {
     padding: 1rem;
   }
 
-  .search-input-row {
-    flex-direction: column;
+  .search-status {
+    flex-basis: 100%;
   }
 
   .card-dialog {
     width: calc(100% - 1rem);
     max-height: calc(100dvh - 1rem);
+  }
+
+  .detail-actions .primary-link {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 22rem) {
+  .search-input-row {
+    flex-direction: column;
   }
 }
 

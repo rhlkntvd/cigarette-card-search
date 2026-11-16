@@ -74,14 +74,37 @@ export default function CardDetail({ card, onClose }: CardDetailProps) {
     >
       <div className="dialog-content">
         <header className="dialog-header">
-          <p className="eyebrow">Card details</p>
+          <h2 id="card-detail-title">{card.title}</h2>
           <button type="button" autoFocus onClick={closeViewer}>
             Close <span aria-hidden="true">×</span>
           </button>
         </header>
 
-        <div className="detail-title-row">
-          <h2 id="card-detail-title">{card.title}</h2>
+        <CardImage
+          key={imageId}
+          imageId={imageId}
+          title={`${card.title} — ${side}`}
+          size={1024}
+        />
+
+        <div className="detail-actions">
+          <div className="image-controls" role="group" aria-label="Card side">
+            <button
+              type="button"
+              aria-pressed={side === "front"}
+              onClick={() => setSide("front")}
+            >
+              Front
+            </button>
+            <button
+              type="button"
+              aria-pressed={side === "back"}
+              disabled={!card.backImageId}
+              onClick={() => setSide("back")}
+            >
+              Back
+            </button>
+          </div>
           <a
             className="primary-link"
             href={card.sourceUrl}
@@ -93,75 +116,11 @@ export default function CardDetail({ card, onClose }: CardDetailProps) {
           </a>
         </div>
 
-        <div className="detail-layout">
-          <div>
-            <CardImage
-              key={imageId}
-              imageId={imageId}
-              title={`${card.title} — ${side}`}
-              size={1024}
-            />
-            <div className="image-controls" role="group" aria-label="Card side">
-              <button
-                type="button"
-                aria-pressed={side === "front"}
-                onClick={() => setSide("front")}
-              >
-                Front
-              </button>
-              <button
-                type="button"
-                aria-pressed={side === "back"}
-                disabled={!card.backImageId}
-                onClick={() => setSide("back")}
-              >
-                Back
-              </button>
-            </div>
-            {!card.backImageId && (
-              <p className="detail-note">
-                No back image is available for this card.
-              </p>
-            )}
-          </div>
-
-          <div className="detail-information">
-            <dl>
-              <div>
-                <dt>Collection</dt>
-                <dd>Cigarette Cards</dd>
-              </div>
-              <div>
-                <dt>Source</dt>
-                <dd>New York Public Library</dd>
-              </div>
-              <div>
-                <dt>Rights statement</dt>
-                <dd>
-                  {card.rights ? (
-                    <a href={card.rights} target="_blank" rel="noreferrer">
-                      Read rights statement <span aria-hidden="true">↗</span>
-                      <span className="visually-hidden">
-                        {" "}
-                        (opens in a new tab)
-                      </span>
-                    </a>
-                  ) : (
-                    "No rights statement provided."
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Public search</dt>
-                <dd>
-                  {card.displayEligible
-                    ? "Included under the project’s display policy."
-                    : "Excluded under the project’s display policy."}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </div>
+        {!card.backImageId && (
+          <p className="detail-note">
+            No back image is available for this card.
+          </p>
+        )}
       </div>
     </dialog>
   );
