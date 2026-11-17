@@ -63,6 +63,22 @@ h1 {
   line-height: 1.05;
 }
 
+.home-link,
+.collection-link {
+  color: inherit;
+  border-radius: 0.15rem;
+  text-decoration: none;
+}
+
+.home-link:hover,
+.collection-link:hover {
+  color: var(--text-secondary);
+}
+
+.collection-link:hover {
+  text-decoration: underline;
+}
+
 .introduction {
   max-width: 38rem;
   margin: 0.6rem auto 1.25rem;
@@ -146,15 +162,9 @@ a:hover {
   background: var(--surface);
 }
 
-.search-form label {
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
 .search-input-row {
   display: flex;
   gap: 0.65rem;
-  margin-top: 0.65rem;
 }
 
 .search-input-row input {
@@ -181,7 +191,6 @@ a:hover {
   padding-inline: 1.25rem;
 }
 
-.search-help,
 .search-status,
 .card-actions,
 .detail-note {
@@ -189,8 +198,23 @@ a:hover {
   font-size: 0.85rem;
 }
 
-.search-help {
-  margin: 0.65rem 0 0;
+.search-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.search-examples button {
+  flex: 1 0 auto;
+  border-color: var(--border);
+  border-radius: 1.5rem;
+  padding-inline: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.search-examples button:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
 
 .search-status,
@@ -204,6 +228,9 @@ a:hover {
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem 1rem;
+}
+
+.results-header:has(h2) {
   margin: 1.25rem 0 1rem;
 }
 
@@ -215,7 +242,6 @@ a:hover {
 .search-status {
   min-width: 0;
   max-width: 48rem;
-  min-height: 1.4em;
   margin: 0;
 }
 
@@ -255,7 +281,8 @@ h2 {
   background: var(--surface);
 }
 
-.result-card:hover {
+.result-card:hover,
+.result-card:focus-within {
   border-color: var(--border-strong);
 }
 
@@ -343,7 +370,8 @@ h2 {
   outline-offset: 3px;
 }
 
-.result-card:hover .card-open {
+.result-card:hover .card-open,
+.result-card:focus-within .card-open {
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
@@ -421,7 +449,7 @@ h2 {
   top: 0;
   z-index: 2;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   padding-bottom: 1rem;

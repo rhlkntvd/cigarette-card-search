@@ -13,8 +13,6 @@ interface CardDetailProps {
 export default function CardDetail({ card, onClose }: CardDetailProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [side, setSide] = useState<"front" | "back">("front");
-  const imageId =
-    side === "back" && card.backImageId ? card.backImageId : card.frontImageId;
 
   useEffect(() => {
     if (!dialogRef.current?.open) {
@@ -37,6 +35,20 @@ export default function CardDetail({ card, onClose }: CardDetailProps) {
         closeViewer();
       }}
       onKeyDown={(event) => {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          if (
+            card.backImageId &&
+            !event.altKey &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.shiftKey
+          ) {
+            event.preventDefault();
+            setSide(event.key === "ArrowLeft" ? "front" : "back");
+          }
+          return;
+        }
+
         if (event.key !== "Tab") {
           return;
         }
@@ -80,18 +92,31 @@ export default function CardDetail({ card, onClose }: CardDetailProps) {
           </button>
         </header>
 
-        <CardImage
-          key={imageId}
-          imageId={imageId}
-          title={`${card.title} — ${side}`}
-          size={1024}
-        />
+        {/* Keep both sides mounted to preload images and preserve pending requests. */}
+        <div hidden={side !== "front"}>
+          <CardImage
+            imageId={card.frontImageId}
+            title={`${card.title} — front`}
+            size={1024}
+          />
+        </div>
+        {card.backImageId && (
+          <div hidden={side !== "back"}>
+            <CardImage
+              imageId={card.backImageId}
+              title={`${card.title} — back`}
+              size={1024}
+            />
+          </div>
+        )}
 
         <div className="detail-actions">
           <div className="image-controls" role="group" aria-label="Card side">
             <button
               type="button"
               aria-pressed={side === "front"}
+              aria-keyshortcuts="ArrowLeft"
+              title="Show front (←)"
               onClick={() => setSide("front")}
             >
               Front
@@ -99,6 +124,8 @@ export default function CardDetail({ card, onClose }: CardDetailProps) {
             <button
               type="button"
               aria-pressed={side === "back"}
+              aria-keyshortcuts="ArrowRight"
+              title="Show back (→)"
               disabled={!card.backImageId}
               onClick={() => setSide("back")}
             >

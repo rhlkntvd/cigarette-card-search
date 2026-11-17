@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import type { SubmitEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { SearchResult } from "../search";
 import { MAX_QUERY_LENGTH, QUERY_TOO_LONG_MESSAGE } from "../query";
@@ -10,6 +9,15 @@ import CardImage from "./card-image";
 import CardDetail from "./card-detail";
 import { SEARCH_PAGE_SIZE } from "./search-page";
 import type { SearchPage } from "./search-page";
+
+const EXAMPLE_QUERIES = [
+  "flowers",
+  "a portrait",
+  "a costume",
+  "a butterfly",
+  "a sailing ship",
+  "a colorful bird",
+];
 
 interface SearchResults extends SearchPage {
   query: string;
@@ -23,6 +31,8 @@ type SearchState =
   | { status: "error"; message: string };
 
 export default function CardSearch() {
+  const exampleButtonRef = useRef<HTMLButtonElement | null>(null);
+  const resultsHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const [query, setQuery] = useState("");
   const [selectedCard, setSelectedCard] = useState<SearchResult | null>(null);
   // Keep the last successful page visible while a replacement is requested.
@@ -32,14 +42,26 @@ export default function CardSearch() {
   const isLoadingMore = results?.loadingMore ?? false;
   const isBusy = isLoading || isLoadingMore;
 
-  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    const button = exampleButtonRef.current;
+    if (results === null || !button) {
+      return;
+    }
+    exampleButtonRef.current = null;
+    if (
+      document.activeElement === button ||
+      document.activeElement === document.body
+    ) {
+      resultsHeadingRef.current?.focus({ preventScroll: true });
+    }
+  }, [results]);
 
+  async function handleSearch(description: string) {
     if (isBusy) {
       return;
     }
 
-    const normalizedQuery = query.trim();
+    const normalizedQuery = description.trim();
 
     if (!normalizedQuery) {
       setSearch({ status: "error", message: "Enter a description to search." });
@@ -52,6 +74,7 @@ export default function CardSearch() {
     }
 
     setSelectedCard(null);
+    setResults((current) => current && { ...current, moreError: null });
     setSearch({ status: "loading", query: normalizedQuery });
 
     try {
@@ -118,21 +141,27 @@ export default function CardSearch() {
 
   return (
     <>
-      <form className="search-form" role="search" onSubmit={handleSubmit}>
-        <label htmlFor="search-query">Describe an image</label>
+      <form
+        className="search-form"
+        role="search"
+        onSubmit={(event) => {
+          event.preventDefault();
+          exampleButtonRef.current = null;
+          void handleSearch(query);
+        }}
+      >
         <div className="search-input-row">
           <input
             id="search-query"
             name="query"
             type="search"
+            aria-label="Describe an image"
             enterKeyHint="search"
-            placeholder="a colorful sunset"
+            placeholder="a vibrant sunset"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-describedby={
-              search.status === "error"
-                ? "search-help search-error"
-                : "search-help"
+              search.status === "error" ? "search-error" : undefined
             }
             aria-invalid={
               search.status === "error" &&
@@ -144,14 +173,35 @@ export default function CardSearch() {
             {isLoading ? "Searching…" : "Search"}
           </button>
         </div>
-        <p id="search-help" className="search-help">
-          Try a subject, scene, color, or mood.
-        </p>
+        {results === null && (
+          <div
+            className="search-examples"
+            role="group"
+            aria-label="Example searches"
+          >
+            {EXAMPLE_QUERIES.map((example) => (
+              <button
+                key={example}
+                type="button"
+                disabled={isBusy}
+                onClick={(event) => {
+                  exampleButtonRef.current = event.currentTarget;
+                  setQuery(example);
+                  void handleSearch(example);
+                }}
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+        )}
       </form>
 
       <div className="results-header">
         {(results !== null || search.status !== "idle") && (
-          <h2 id="results-title">Search results</h2>
+          <h2 id="results-title" ref={resultsHeadingRef} tabIndex={-1}>
+            Search results
+          </h2>
         )}
         <p className="search-status" role="status" aria-atomic="true">
           {results &&
@@ -201,6 +251,7 @@ export default function CardSearch() {
                         href={card.sourceUrl}
                         target="_blank"
                         rel="noreferrer"
+                        aria-label={`View ${card.title} at NYPL (opens in a new tab)`}
                       >
                         NYPL <span aria-hidden="true">↗</span>
                         <span className="visually-hidden">
