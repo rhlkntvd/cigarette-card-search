@@ -12,6 +12,26 @@ from ml.common import TEXT_MAX_TOKENS, TextTooLongError, embed_texts
 
 
 class TextEmbeddingTests(unittest.TestCase):
+    def test_normalizes_each_text_independently_without_reordering_rows(self):
+        processor = Mock(
+            return_value=BatchEncoding(
+                {"input_ids": [[1] * TEXT_MAX_TOKENS, [2] * TEXT_MAX_TOKENS]}
+            )
+        )
+        model = Mock()
+        model.parameters.return_value = iter([torch.zeros(1)])
+        features = torch.zeros(2, 768)
+        features[0, :2] = torch.tensor([3.0, 4.0])
+        features[1, 1] = 12.0
+        model.get_text_features.return_value = features
+
+        embeddings = embed_texts(["butterfly", "sailing ship"], processor, model)
+
+        expected = torch.zeros(2, 768)
+        expected[0, :2] = torch.tensor([0.6, 0.8])
+        expected[1, 1] = 1.0
+        self.assertTrue(torch.allclose(embeddings, expected))
+
     def test_accepts_the_token_boundary_and_returns_normalized_embeddings(self):
         processor = Mock(
             return_value=BatchEncoding({"input_ids": [[1] * TEXT_MAX_TOKENS]})
@@ -56,6 +76,19 @@ class EmbeddingEndpointTests(unittest.TestCase):
     def setUp(self):
         app = SimpleNamespace(state=SimpleNamespace(processor=Mock(), model=Mock()))
         self.request = Request({"type": "http", "app": app})
+
+    def test_rejects_empty_and_whitespace_requests_before_inference(self):
+        with patch.object(embedding_service, "embed_texts") as embed:
+            for text in ("", " \t\n "):
+                with self.subTest(text=text):
+                    with self.assertRaises(HTTPException) as caught:
+                        embedding_service.embed(
+                            embedding_service.EmbedRequest(text=text), self.request
+                        )
+                    self.assertEqual(caught.exception.status_code, 400)
+                    self.assertEqual(caught.exception.detail, "Text must not be empty.")
+
+        embed.assert_not_called()
 
     def test_rejects_large_requests_before_tokenization(self):
         with patch.object(embedding_service, "embed_texts") as embed:

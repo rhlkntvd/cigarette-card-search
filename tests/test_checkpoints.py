@@ -24,6 +24,28 @@ class CheckpointDatasetTests(unittest.TestCase):
             {"dplaId": "second", "frontImageId": "456", "rights": None},
         ]
 
+    def test_resume_stops_at_missing_or_incomplete_shards(self):
+        cards = [{"dplaId": f"card-{index}"} for index in range(6)]
+        embed_cards.check_checkpoint_dataset(cards)
+        for start, end in ((0, 1), (4, 5)):
+            embed_cards.save_shard(
+                start,
+                end,
+                [torch.ones(768), torch.ones(768)],
+                cards[start : end + 1],
+                [],
+            )
+
+        self.assertEqual(embed_cards.get_resume_index(), 2)
+
+        embed_cards.save_shard(2, 3, [torch.ones(768), torch.ones(768)], cards[2:4], [])
+        _, metadata_path, _ = embed_cards.get_shard_paths(2, 3)
+        metadata_path.unlink()
+        self.assertEqual(embed_cards.get_resume_index(), 2)
+
+        embed_cards.write_jsonl(metadata_path, cards[2:4])
+        self.assertEqual(embed_cards.get_resume_index(), 6)
+
     def test_records_dataset_and_model_for_a_new_run(self):
         embed_cards.check_checkpoint_dataset(self.cards)
 

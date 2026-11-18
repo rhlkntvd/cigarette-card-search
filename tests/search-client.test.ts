@@ -22,6 +22,7 @@ test("posts the query to the same-origin search endpoint and returns cards", asy
     async (url: Parameters<typeof fetch>[0], options?: RequestInit) => {
       assert.equal(url, "/api/search");
       assert.equal(options?.method, "POST");
+      assert.ok(options?.signal instanceof AbortSignal);
       assert.deepEqual(options?.headers, {
         "Content-Type": "application/json",
       });
@@ -46,6 +47,26 @@ test("accepts empty results", async (t) => {
   );
   assert.deepEqual(await fetchSearchResults("butterfly"), {
     results: [],
+    hasMore: false,
+  });
+});
+
+test("preserves full-corpus cards, back images, and result order", async (t) => {
+  const cards: SearchResult[] = [
+    {
+      ...card,
+      backImageId: "456",
+      rights: null,
+      displayEligible: false,
+    },
+    { ...card, dplaId: "second-card", similarity: -0.1 },
+  ];
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ results: cards, hasMore: false }),
+  );
+
+  assert.deepEqual(await fetchSearchResults("butterfly"), {
+    results: cards,
     hasMore: false,
   });
 });
@@ -105,6 +126,62 @@ test("adds a readable message to connection failures and preserves the cause", a
     message: "Could not reach search. Please try again.",
     cause,
   });
+});
+
+test("reports interrupted response bodies as connection failures", async (t) => {
+  const cause = new Error("Connection closed while reading results");
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(cause);
+          },
+        }),
+      ),
+  );
+  await assert.rejects(fetchSearchResults("butterfly"), {
+    message: "Could not reach search. Please try again.",
+    cause,
+  });
+});
+
+test("applies the search deadline to both the request and response body", async (t) => {
+  for (const phase of ["request", "body"] as const) {
+    await t.test(phase, async (t) => {
+      const controller = new AbortController();
+      const cause = new DOMException("Deadline exceeded", "TimeoutError");
+      t.mock.method(AbortSignal, "timeout", (milliseconds: number) => {
+        assert.equal(milliseconds, 45_000);
+        return controller.signal;
+      });
+      t.mock.method(
+        globalThis,
+        "fetch",
+        async (_url: Parameters<typeof fetch>[0], options?: RequestInit) => {
+          assert.equal(options?.signal, controller.signal);
+          if (phase === "request") {
+            controller.abort(cause);
+            throw cause;
+          }
+          return new Response(
+            new ReadableStream({
+              pull(streamController) {
+                controller.abort(cause);
+                streamController.error(cause);
+              },
+            }),
+          );
+        },
+      );
+      await assert.rejects(fetchSearchResults("butterfly"), {
+        message: "Search timed out. Please try again.",
+        cause,
+      });
+    });
+  }
 });
 
 test("rejects malformed successful responses instead of rendering invalid cards", async (t) => {

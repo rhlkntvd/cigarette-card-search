@@ -58,6 +58,27 @@ class ModelOutputTests(unittest.TestCase):
 
 
 class ImportTests(unittest.TestCase):
+    def test_misaligned_artifacts_stop_import_before_connecting_to_database(self):
+        for card_count, embedding_count in ((1, 2), (2, 1)):
+            with self.subTest(cards=card_count, embeddings=embedding_count):
+                with patch.object(import_pgvector, "load_dotenv"), patch.object(
+                    import_pgvector, "get_database_url", return_value="unused"
+                ), patch.object(
+                    import_pgvector, "load_cards", return_value=[{}] * card_count
+                ), patch.object(
+                    import_pgvector,
+                    "load_embeddings",
+                    return_value=torch.ones(embedding_count, 768),
+                ), patch.object(
+                    import_pgvector.psycopg, "connect"
+                ) as connect, patch(
+                    "builtins.print"
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "not aligned"):
+                        import_pgvector.main()
+
+                connect.assert_not_called()
+
     def load_tensor(self, tensor):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "embeddings.pt"

@@ -70,7 +70,6 @@ h1 {
   text-decoration: none;
 }
 
-.home-link:hover,
 .collection-link:hover {
   color: var(--text-secondary);
 }

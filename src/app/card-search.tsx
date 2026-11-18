@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 
 import type { SearchResult } from "../search";
 import { MAX_QUERY_LENGTH, QUERY_TOO_LONG_MESSAGE } from "../query";
@@ -33,6 +34,11 @@ type SearchState =
 export default function CardSearch() {
   const exampleButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultsHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const resultsListRef = useRef<HTMLOListElement | null>(null);
+  const paginationFocusRef = useRef<{
+    index: number;
+    trigger: HTMLButtonElement;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [selectedCard, setSelectedCard] = useState<SearchResult | null>(null);
   // Keep the last successful page visible while a replacement is requested.
@@ -56,6 +62,28 @@ export default function CardSearch() {
     }
   }, [results]);
 
+  useEffect(() => {
+    const next = paginationFocusRef.current;
+    if (!next || !results || results.loadingMore) {
+      return;
+    }
+    paginationFocusRef.current = null;
+    if (
+      document.activeElement === next.trigger ||
+      document.activeElement === document.body
+    ) {
+      const button =
+        resultsListRef.current?.querySelectorAll<HTMLButtonElement>(
+          ".card-open",
+        )[next.index];
+      const target =
+        button ??
+        (next.trigger.isConnected ? next.trigger : resultsHeadingRef.current);
+      target?.focus({ preventScroll: true });
+      button?.closest("article")?.scrollIntoView({ block: "nearest" });
+    }
+  }, [results]);
+
   async function handleSearch(description: string) {
     if (isBusy) {
       return;
@@ -74,6 +102,7 @@ export default function CardSearch() {
     }
 
     setSelectedCard(null);
+    paginationFocusRef.current = null;
     setResults((current) => current && { ...current, moreError: null });
     setSearch({ status: "loading", query: normalizedQuery });
 
@@ -97,11 +126,15 @@ export default function CardSearch() {
     }
   }
 
-  async function handleShowMore() {
+  async function handleShowMore(event: MouseEvent<HTMLButtonElement>) {
     if (!results || !results.hasMore || isBusy) {
       return;
     }
 
+    paginationFocusRef.current = {
+      index: results.results.length,
+      trigger: event.currentTarget,
+    };
     setResults({ ...results, loadingMore: true, moreError: null });
 
     try {
@@ -226,7 +259,7 @@ export default function CardSearch() {
 
       {results && results.results.length > 0 && (
         <section aria-labelledby="results-title" aria-busy={isBusy}>
-          <ol className="results-grid" role="list">
+          <ol className="results-grid" role="list" ref={resultsListRef}>
             {results.results.map((card) => (
               <li key={card.dplaId}>
                 <article className="result-card">
@@ -293,7 +326,16 @@ export default function CardSearch() {
         <CardDetail
           key={selectedCard.dplaId}
           card={selectedCard}
-          onClose={() => setSelectedCard(null)}
+          onClose={() => {
+            setSelectedCard(null);
+            if (
+              !results?.results.some(
+                (card) => card.dplaId === selectedCard.dplaId,
+              )
+            ) {
+              resultsHeadingRef.current?.focus({ preventScroll: true });
+            }
+          }}
         />
       )}
     </>
