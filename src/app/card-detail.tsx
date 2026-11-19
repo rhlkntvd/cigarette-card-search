@@ -85,12 +85,17 @@ export default function CardDetail({ card, onClose }: CardDetailProps) {
       }}
     >
       <div className="dialog-content">
-        <header className="dialog-header">
-          <h2 id="card-detail-title">{card.title}</h2>
-          <button type="button" autoFocus onClick={closeViewer}>
-            Close <span aria-hidden="true">×</span>
-          </button>
-        </header>
+        <h2 id="card-detail-title" className="dialog-title">
+          {card.title}
+        </h2>
+        <button
+          className="dialog-close"
+          type="button"
+          autoFocus
+          onClick={closeViewer}
+        >
+          Close <span aria-hidden="true">×</span>
+        </button>
 
         {/* Keep both sides mounted to preload images and preserve pending requests. */}
         <div hidden={side !== "front"}>
