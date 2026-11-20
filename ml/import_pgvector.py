@@ -4,6 +4,7 @@ Run from the repository root:
     python -m ml.import_pgvector
 """
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,23 @@ VALUES (
     %s
 )
 """
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Import card metadata and embeddings into an empty cards table."
+    )
+    parser.add_argument(
+        "--public-only",
+        action="store_true",
+        help="Import only cards with displayEligible set to true.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Check artifacts and show selection counts without connecting to PostgreSQL.",
+    )
+    return parser.parse_args(argv)
 
 
 def get_database_url() -> str:
@@ -158,6 +176,25 @@ def count_display_eligible(
     return sum(card.get("displayEligible") is True for card in cards)
 
 
+def select_import_data(
+    cards: list[dict[str, Any]],
+    embeddings: torch.Tensor,
+    public_only: bool,
+) -> tuple[list[dict[str, Any]], torch.Tensor]:
+    validate_alignment(cards, embeddings)
+    if not public_only:
+        return cards, embeddings
+
+    indices = [
+        index for index, card in enumerate(cards) if card.get("displayEligible") is True
+    ]
+    if not indices:
+        raise RuntimeError("No display-eligible cards found for public import")
+
+    # Filter both artifacts by the same indices; one source card has no embedding.
+    return [cards[index] for index in indices], embeddings[indices]
+
+
 def make_row(
     card: dict[str, Any],
     embedding: torch.Tensor,
@@ -211,9 +248,9 @@ def make_row(
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     load_dotenv(ROOT / ".env", override=False)
-    database_url = get_database_url()
 
     print("Loading embedding metadata...")
     cards = load_cards()
@@ -221,9 +258,10 @@ def main() -> None:
     print("Loading image embeddings...")
     embeddings = load_embeddings()
 
-    validate_alignment(
+    cards, embeddings = select_import_data(
         cards,
         embeddings,
+        args.public_only,
     )
 
     display_eligible_count = count_display_eligible(cards)
@@ -231,10 +269,16 @@ def main() -> None:
     print()
     print("Import preflight")
     print("----------------------")
+    print(f"Scope: {'public' if args.public_only else 'all'}")
     print(f"Cards: {len(cards)}")
     print("Embedding matrix shape: " f"{tuple(embeddings.shape)}")
     print("Display eligible: " f"{display_eligible_count}")
 
+    if args.dry_run:
+        print("Dry run complete; no database connection was made.")
+        return
+
+    database_url = get_database_url()
     print()
     print("Connecting to PostgreSQL...")
 

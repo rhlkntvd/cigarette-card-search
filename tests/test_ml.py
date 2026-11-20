@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -75,9 +77,138 @@ class ImportTests(unittest.TestCase):
                     "builtins.print"
                 ):
                     with self.assertRaisesRegex(RuntimeError, "not aligned"):
-                        import_pgvector.main()
+                        import_pgvector.main([])
 
                 connect.assert_not_called()
+
+    def test_default_selection_preserves_the_full_corpus(self):
+        cards = [{"displayEligible": False}, {"displayEligible": True}]
+        embeddings = torch.ones(2, 768)
+
+        selected_cards, selected_embeddings = import_pgvector.select_import_data(
+            cards, embeddings, public_only=False
+        )
+
+        self.assertIs(selected_cards, cards)
+        self.assertIs(selected_embeddings, embeddings)
+        self.assertFalse(import_pgvector.parse_args([]).public_only)
+
+    def test_public_selection_preserves_matching_vectors_and_order(self):
+        cards = [
+            {"dplaId": str(index), "displayEligible": eligible}
+            for index, eligible in enumerate([False, True, 1, "true", None, True])
+        ]
+        embeddings = torch.arange(6 * 768).reshape(6, 768).float()
+
+        selected_cards, selected_embeddings = import_pgvector.select_import_data(
+            cards, embeddings, public_only=True
+        )
+
+        self.assertEqual(selected_cards, [cards[1], cards[5]])
+        self.assertTrue(torch.equal(selected_embeddings, embeddings[[1, 5]]))
+        self.assertEqual(len(cards), 6)
+        self.assertEqual(embeddings.shape, (6, 768))
+
+    def test_public_selection_checks_alignment_before_filtering(self):
+        cards = [{"displayEligible": False}, {"displayEligible": True}]
+        with self.assertRaisesRegex(RuntimeError, "not aligned"):
+            import_pgvector.select_import_data(
+                cards, torch.ones(1, 768), public_only=True
+            )
+
+    def test_public_selection_rejects_an_empty_eligible_corpus(self):
+        with self.assertRaisesRegex(RuntimeError, "No display-eligible cards"):
+            import_pgvector.select_import_data(
+                [{"displayEligible": False}], torch.ones(1, 768), public_only=True
+            )
+
+    def test_public_dry_run_reports_selection_without_database_configuration(self):
+        output = StringIO()
+        with patch.object(import_pgvector, "load_dotenv"), patch.object(
+            import_pgvector,
+            "load_cards",
+            return_value=[{"displayEligible": False}, {"displayEligible": True}],
+        ), patch.object(
+            import_pgvector, "load_embeddings", return_value=torch.ones(2, 768)
+        ), patch.object(
+            import_pgvector, "get_database_url"
+        ) as database_url, patch.object(
+            import_pgvector.psycopg, "connect"
+        ) as connect, redirect_stdout(
+            output
+        ):
+            import_pgvector.main(["--public-only", "--dry-run"])
+
+        database_url.assert_not_called()
+        connect.assert_not_called()
+        self.assertIn("Scope: public", output.getvalue())
+        self.assertIn("Cards: 1\n", output.getvalue())
+        self.assertIn("Embedding matrix shape: (1, 768)", output.getvalue())
+        self.assertIn("Display eligible: 1\n", output.getvalue())
+
+    def test_public_import_writes_only_eligible_cards_with_matching_vectors(self):
+        cards = [
+            {
+                "dplaId": str(index),
+                "nyplUuid": f"uuid-{index}",
+                "title": f"Card {index}",
+                "frontImageId": str(index),
+                "sourceUrl": f"https://example.test/{index}",
+                "rights": None,
+                "displayEligible": eligible,
+            }
+            for index, eligible in enumerate([True, False, True])
+        ]
+        embeddings = torch.arange(3 * 768).reshape(3, 768).float()
+        with patch.object(import_pgvector, "load_dotenv"), patch.object(
+            import_pgvector, "get_database_url", return_value="unused"
+        ), patch.object(
+            import_pgvector, "load_cards", return_value=cards
+        ), patch.object(
+            import_pgvector, "load_embeddings", return_value=embeddings
+        ), patch.object(
+            import_pgvector, "register_vector"
+        ), patch.object(
+            import_pgvector.psycopg, "connect"
+        ) as connect, patch(
+            "builtins.print"
+        ):
+            connection = connect.return_value.__enter__.return_value
+            connection.execute.return_value.fetchone.side_effect = [(0,), (2, 0, 2)]
+            cursor = connection.cursor.return_value.__enter__.return_value
+
+            import_pgvector.main(["--public-only"])
+
+        cursor.executemany.assert_called_once()
+        sql, rows = cursor.executemany.call_args.args
+        self.assertEqual(sql, import_pgvector.INSERT_SQL)
+        self.assertEqual([row[0] for row in rows], ["0", "2"])
+        self.assertTrue(all(row[7] is True for row in rows))
+        for row, index in zip(rows, [0, 2]):
+            self.assertEqual(row[8].to_numpy().tolist(), embeddings[index].tolist())
+
+    def test_public_import_refuses_a_nonempty_table_before_writing(self):
+        with patch.object(import_pgvector, "load_dotenv"), patch.object(
+            import_pgvector, "get_database_url", return_value="unused"
+        ), patch.object(
+            import_pgvector, "load_cards", return_value=[{"displayEligible": True}]
+        ), patch.object(
+            import_pgvector, "load_embeddings", return_value=torch.ones(1, 768)
+        ), patch.object(
+            import_pgvector, "register_vector"
+        ), patch.object(
+            import_pgvector.psycopg, "connect"
+        ) as connect, patch(
+            "builtins.print"
+        ):
+            connection = connect.return_value.__enter__.return_value
+            connection.execute.return_value.fetchone.return_value = (49670,)
+
+            with self.assertRaisesRegex(RuntimeError, "cards table is not empty"):
+                import_pgvector.main(["--public-only"])
+
+        connection.execute.assert_called_once_with("SELECT COUNT(*) FROM cards")
+        connection.cursor.assert_not_called()
 
     def load_tensor(self, tensor):
         with tempfile.TemporaryDirectory() as directory:
