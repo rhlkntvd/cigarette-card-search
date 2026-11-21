@@ -5,9 +5,13 @@ import { embedText } from "../src/embedding.js";
 import { MAX_QUERY_LENGTH, QueryTooLongError } from "../src/query.js";
 
 const originalServiceUrl = process.env.EMBEDDING_SERVICE_URL;
+const originalProxyKey = process.env.MODAL_PROXY_KEY;
+const originalProxySecret = process.env.MODAL_PROXY_SECRET;
 
 beforeEach(() => {
   process.env.EMBEDDING_SERVICE_URL = "http://embedding.test/";
+  delete process.env.MODAL_PROXY_KEY;
+  delete process.env.MODAL_PROXY_SECRET;
 });
 
 afterEach(() => {
@@ -16,6 +20,67 @@ afterEach(() => {
   } else {
     process.env.EMBEDDING_SERVICE_URL = originalServiceUrl;
   }
+  for (const [key, value] of [
+    ["MODAL_PROXY_KEY", originalProxyKey],
+    ["MODAL_PROXY_SECRET", originalProxySecret],
+  ] as const) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+});
+
+test("authenticates hosted embedding requests without following redirects", async (t) => {
+  process.env.EMBEDDING_SERVICE_URL = "https://embedding.test";
+  process.env.MODAL_PROXY_KEY = "wk-test";
+  process.env.MODAL_PROXY_SECRET = "ws-test";
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (url: Parameters<typeof fetch>[0], options?: RequestInit) => {
+      assert.equal(url, "https://embedding.test/embed");
+      assert.deepEqual(options?.headers, {
+        "Content-Type": "application/json",
+        "Modal-Key": "wk-test",
+        "Modal-Secret": "ws-test",
+      });
+      assert.equal(options?.redirect, "error");
+      return Response.json({ dimensions: 768, embedding: Array(768).fill(1) });
+    },
+  );
+
+  assert.equal((await embedText("butterfly")).length, 768);
+});
+
+test("rejects incomplete Modal credentials before making a request", async (t) => {
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Unexpected HTTP request");
+  });
+  for (const [key, secret] of [
+    ["wk-test", ""],
+    ["", "ws-test"],
+  ]) {
+    process.env.MODAL_PROXY_KEY = key;
+    process.env.MODAL_PROXY_SECRET = secret;
+    await assert.rejects(
+      embedText("butterfly"),
+      /Set both MODAL_PROXY_KEY and MODAL_PROXY_SECRET/,
+    );
+  }
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("refuses to send Modal credentials over plaintext HTTP", async (t) => {
+  process.env.MODAL_PROXY_KEY = "wk-test";
+  process.env.MODAL_PROXY_SECRET = "ws-test";
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Unexpected HTTP request");
+  });
+
+  await assert.rejects(embedText("butterfly"), /credentials require an HTTPS/);
+  assert.equal(fetchMock.mock.callCount(), 0);
 });
 
 test("posts trimmed text and returns the validated embedding", async (t) => {
@@ -39,6 +104,25 @@ test("posts trimmed text and returns the validated embedding", async (t) => {
   );
 
   assert.deepEqual(await embedText("  a blue butterfly  "), embedding);
+  assert.equal(fetchMock.mock.callCount(), 1);
+});
+
+test("blank optional Modal credentials preserve local embedding requests", async (t) => {
+  process.env.MODAL_PROXY_KEY = " \t ";
+  process.env.MODAL_PROXY_SECRET = "\n ";
+  const embedding = Array(768).fill(1);
+  const fetchMock = t.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: Parameters<typeof fetch>[0], options?: RequestInit) => {
+      assert.deepEqual(options?.headers, {
+        "Content-Type": "application/json",
+      });
+      return Response.json({ dimensions: 768, embedding });
+    },
+  );
+
+  assert.deepEqual(await embedText("butterfly"), embedding);
   assert.equal(fetchMock.mock.callCount(), 1);
 });
 

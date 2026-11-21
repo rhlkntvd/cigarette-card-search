@@ -9,6 +9,7 @@ import { getSearchScope } from "../../search-scope";
 import { SEARCH_PAGE_SIZE } from "../../search-page";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(request: Request): Promise<Response> {
   const contentType = request.headers

@@ -18,6 +18,30 @@ function getEmbeddingServiceUrl(): string {
   return url.replace(/\/$/, "");
 }
 
+function getEmbeddingHeaders(url: string): Record<string, string> {
+  const key = process.env.MODAL_PROXY_KEY?.trim();
+  const secret = process.env.MODAL_PROXY_SECRET?.trim();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (Boolean(key) !== Boolean(secret)) {
+    throw new Error("Set both MODAL_PROXY_KEY and MODAL_PROXY_SECRET");
+  }
+
+  if (key && secret) {
+    if (new URL(url).protocol !== "https:") {
+      throw new Error(
+        "Modal credentials require an HTTPS embedding service URL",
+      );
+    }
+    headers["Modal-Key"] = key;
+    headers["Modal-Secret"] = secret;
+  }
+
+  return headers;
+}
+
 function isEmbedResponse(value: unknown): value is EmbedResponse {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -43,6 +67,7 @@ export async function embedText(text: string): Promise<number[]> {
   }
 
   const url = `${getEmbeddingServiceUrl()}/embed`;
+  const headers = getEmbeddingHeaders(url);
   const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
   let response: Response;
@@ -51,9 +76,8 @@ export async function embedText(text: string): Promise<number[]> {
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
+      redirect: "error",
       body: JSON.stringify({ text: normalizedText }),
       signal,
     });

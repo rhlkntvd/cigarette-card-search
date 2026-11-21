@@ -1,9 +1,10 @@
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import torch
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from starlette.requests import Request
 from transformers.tokenization_utils_base import BatchEncoding
 
@@ -70,6 +71,65 @@ class TextEmbeddingTests(unittest.TestCase):
 
                 model.get_text_features.assert_not_called()
                 model.parameters.assert_not_called()
+
+
+class EmbeddingLifespanTests(unittest.TestCase):
+    def test_loads_one_model_for_multiple_requests_and_releases_it_on_shutdown(self):
+        app = FastAPI()
+        request = Request({"type": "http", "app": app})
+        processor, model = Mock(), Mock()
+        device = torch.device("cpu")
+
+        async def exercise_service():
+            async with embedding_service.lifespan(app):
+                for text in ("butterfly", "sailing ship"):
+                    embedding_service.embed(
+                        embedding_service.EmbedRequest(text=text), request
+                    )
+                self.assertIs(app.state.processor, processor)
+                self.assertIs(app.state.model, model)
+
+        with patch.object(
+            embedding_service, "get_device", return_value=device
+        ), patch.object(
+            embedding_service, "load_model", return_value=(processor, model)
+        ) as load, patch.object(
+            embedding_service, "embed_texts", return_value=torch.ones(1, 768)
+        ) as embed, patch(
+            "builtins.print"
+        ):
+            asyncio.run(exercise_service())
+
+        load.assert_called_once_with(device)
+        self.assertEqual(
+            [call.args for call in embed.call_args_list],
+            [(["butterfly"], processor, model), (["sailing ship"], processor, model)],
+        )
+        self.assertFalse(hasattr(app.state, "processor"))
+        self.assertFalse(hasattr(app.state, "model"))
+
+    def test_model_loading_failure_prevents_service_readiness(self):
+        app = FastAPI()
+        error = OSError("Model files unavailable")
+
+        async def start_service():
+            async with embedding_service.lifespan(app):
+                self.fail("Service became ready without a model")
+
+        with patch.object(
+            embedding_service, "get_device", return_value=torch.device("cpu")
+        ), patch.object(
+            embedding_service, "load_model", side_effect=error
+        ) as load, patch(
+            "builtins.print"
+        ):
+            with self.assertRaises(OSError) as caught:
+                asyncio.run(start_service())
+
+        self.assertIs(caught.exception, error)
+        load.assert_called_once()
+        self.assertFalse(hasattr(app.state, "processor"))
+        self.assertFalse(hasattr(app.state, "model"))
 
 
 class EmbeddingEndpointTests(unittest.TestCase):

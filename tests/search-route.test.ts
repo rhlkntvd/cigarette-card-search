@@ -8,6 +8,8 @@ const environmentKeys = [
   "SEARCH_SCOPE",
   "EMBEDDING_SERVICE_URL",
   "DATABASE_URL",
+  "MODAL_PROXY_KEY",
+  "MODAL_PROXY_SECRET",
 ] as const;
 const originalEnvironment = environmentKeys.map(
   (key) => [key, process.env[key]] as const,
@@ -24,6 +26,8 @@ function request(body: unknown): Request {
 beforeEach(() => {
   delete process.env.SEARCH_SCOPE;
   delete process.env.DATABASE_URL;
+  delete process.env.MODAL_PROXY_KEY;
+  delete process.env.MODAL_PROXY_SECRET;
   process.env.EMBEDDING_SERVICE_URL = "http://embedding.test";
 });
 
@@ -232,6 +236,38 @@ test("trims the query and keeps embedding failures in server logs", async (t) =>
   const loggedError: unknown = errorMock.mock.calls[0]?.arguments[1];
   assert.ok(loggedError instanceof Error);
   assert.equal(loggedError.cause, cause);
+});
+
+test("keeps Modal authentication errors out of public search responses", async (t) => {
+  process.env.EMBEDDING_SERVICE_URL = "https://embedding.test";
+  process.env.MODAL_PROXY_KEY = "wk-test";
+  process.env.MODAL_PROXY_SECRET = "ws-test";
+  let status = 401;
+  const fetchMock = t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response("Private proxy authentication details", { status }),
+  );
+  const errorMock = t.mock.method(console, "error", () => {});
+
+  for (const code of [401, 403]) {
+    status = code;
+    const response = await POST(request({ query: "butterfly" }));
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), {
+      error: "Search is unavailable. Please try again.",
+    });
+    const loggedError: unknown = errorMock.mock.calls.at(-1)?.arguments[1];
+    assert.ok(loggedError instanceof Error);
+    assert.equal(
+      loggedError.message,
+      `Embedding service returned ${code}: Private proxy authentication details`,
+    );
+  }
+
+  assert.equal(fetchMock.mock.callCount(), 2);
+  assert.equal(errorMock.mock.callCount(), 2);
 });
 
 test("returns a safe error when database configuration is missing", async (t) => {
