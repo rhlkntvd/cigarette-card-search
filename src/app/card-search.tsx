@@ -12,12 +12,12 @@ import { SEARCH_PAGE_SIZE } from "./search-page";
 import type { SearchPage } from "./search-page";
 
 const EXAMPLE_QUERIES = [
-  "flowers",
   "a portrait",
-  "a costume",
-  "a butterfly",
   "a sailing ship",
-  "a colorful bird",
+  "an iceberg",
+  "a steam engine",
+  "a soldier",
+  "a telescope",
 ];
 
 interface SearchResults extends SearchPage {
@@ -190,7 +190,7 @@ export default function CardSearch() {
             type="search"
             aria-label="Describe an image"
             enterKeyHint="search"
-            placeholder="a vibrant sunset"
+            placeholder="a polar explorer"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-describedby={
